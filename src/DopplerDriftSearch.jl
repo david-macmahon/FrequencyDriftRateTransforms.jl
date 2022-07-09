@@ -2,7 +2,9 @@ module DopplerDriftSearch
 
 export create_fdr
 export intfdr, intfdr!
-export fftfdr, fftfdr!, fftfdr_workspace
+export fftfdr_workspace
+export fdshift, fdshift!
+export fftfdr, fftfdr!
 
 """
 Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`

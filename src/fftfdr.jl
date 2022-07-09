@@ -23,14 +23,39 @@ constraints, but if the columns of `fftfdr`'s output buffer will be suitably
 aligned for the FFT implementation, then `bunalingned` may be passed as false.
 This will usually be the case if the number of frequency channels has several
 factors of 2, but it depends on the specifics of the FFT implementation.
+
+The workspace also includes an FFT plan suitable for generating a *de-dopplered*
+spectrogram for a given rate.  This functionality is provided by `fdshift!`.
 """
 function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
     mat = similar(spectrogram, Complex{eltype(spectrogram)}, Nf÷2+1, Nt)
     vec = similar(mat, Nf÷2+1)
     fplan = plan_rfft(spectrogram, 1)
-    bplan = plan_brfft(vec, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
-    (mat=mat, vec=vec, fplan=fplan, bplan=bplan)
+    bplan1d = plan_brfft(vec, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
+    # The `2d` in `bplan2d` refers to the input/output arrays.
+    # The dimensionality of the FFT is still 1D along the first dimension.
+    bplan2d = plan_brfft(mat, Nf, 1) # Assume output will always be aligned for now
+    (mat=mat, vec=vec, fplan=fplan, bplan1d=bplan1d, bplan2d=bplan2d)
+end
+
+function fdshift!(dest::AbstractMatrix, spectrogram::AbstractMatrix, rate, workspace)
+    @assert size(dest) == size(spectrogram) "destination is the wrong size"
+    Nf = size(spectrogram, 1)
+
+    # Calculate forward FFT of spectrogram to get into the Fourier domain
+    mul!(workspace.mat, workspace.fplan, spectrogram)
+
+    # Multiply the fourier domain spectra by the doppler rate phasors.
+    workspace.mat .*= phasor.(CartesianIndices(workspace.mat), Float32(rate), Nf)
+
+    # Store the backwards FFT of `workspace.mat` into `dest`.
+    mul!(dest, workspace.bplan2d, workspace.mat)
+end
+
+function fdshift(spectrogram::AbstractMatrix, rate, workspace)
+    dest = similar(spectrogram)
+    fdshift!(dest, spectrogram, rate, workspace)
 end
 
 function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace)
@@ -47,7 +72,7 @@ function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, wo
     sum!(workspace.vec, workspace.mat)
 
     # Store the backwards FFT of `workspace.vec` into `dest`.
-    mul!(dest, workspace.bplan, workspace.vec)
+    mul!(dest, workspace.bplan1d, workspace.vec)
 end
 
 """
