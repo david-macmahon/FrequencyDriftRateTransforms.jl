@@ -39,8 +39,13 @@ function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     (mat=mat, vec=vec, fplan=fplan, bplan1d=bplan1d, bplan2d=bplan2d)
 end
 
-function fdshift!(dest::AbstractMatrix, spectrogram::AbstractMatrix, rate, workspace)
+function fdshift!(dest::AbstractMatrix, spectrogram::AbstractMatrix, rate, workspace=nothing)
     @assert size(dest) == size(spectrogram) "destination is the wrong size"
+
+    if workspace === nothing
+        workspace = fftfdr_workspace(spectrogram)
+    end
+
     Nf = size(spectrogram, 1)
 
     # Calculate forward FFT of spectrogram to get into the Fourier domain
@@ -53,14 +58,18 @@ function fdshift!(dest::AbstractMatrix, spectrogram::AbstractMatrix, rate, works
     mul!(dest, workspace.bplan2d, workspace.mat)
 end
 
-function fdshift(spectrogram::AbstractMatrix, rate, workspace)
+function fdshift(spectrogram::AbstractMatrix, rate, workspace=nothing)
     dest = similar(spectrogram)
     fdshift!(dest, spectrogram, rate, workspace)
 end
 
-function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace)
+function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace=nothing)
     Nf = size(spectrogram, 1)
     @assert length(dest) == Nf "Incorrect destination size"
+
+    if workspace === nothing
+        workspace = fftfdr_workspace(spectrogram)
+    end
 
     # Calculate forward FFT of spectrogram to get into the Fourier domain
     mul!(workspace.mat, workspace.fplan, spectrogram)
@@ -83,9 +92,6 @@ function fftfdr!(fdr, spectrogram, rates, workspace=nothing)
     Nf = size(spectrogram, 1)
     Nr = length(rates)
     @assert size(fdr) == (Nf, Nr)
-    if workspace === nothing
-        workspace = fftfdr_workspace(spectrogram)
-    end
     for (i,r) in enumerate(rates)
         fdshiftsum!(@view(fdr[:,i]), spectrogram, r, workspace)
     end
