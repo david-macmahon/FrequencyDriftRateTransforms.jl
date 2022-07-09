@@ -33,7 +33,7 @@ function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     (mat=mat, vec=vec, fplan=fplan, bplan=bplan)
 end
 
-function fdshift!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace)
+function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace)
     Nf = size(spectrogram, 1)
     @assert length(dest) == Nf "Incorrect destination size"
 
@@ -62,7 +62,7 @@ function fftfdr!(fdr, spectrogram, rates, workspace=nothing)
         workspace = fftfdr_workspace(spectrogram)
     end
     for (i,r) in enumerate(rates)
-        fdshift!(@view(fdr[:,i]), spectrogram, r, workspace)
+        fdshiftsum!(@view(fdr[:,i]), spectrogram, r, workspace)
     end
     return fdr
 end
