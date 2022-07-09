@@ -1,0 +1,13 @@
+name = "DopplerDriftSearch"
+uuid = "fb9f5a76-33a9-4170-a29d-c7447c215bd7"
+authors = ["David MacMahon <davidm@astro.berkeley.edu> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1.6"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
