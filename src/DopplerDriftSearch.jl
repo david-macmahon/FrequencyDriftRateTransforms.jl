@@ -1,7 +1,12 @@
 module DopplerDriftSearch
 
 export create_fdr
+
+# intfdr.jl
+export intshift, intshift!
 export intfdr, intfdr!
+
+# fftfdr.jl
 export fftfdr_workspace
 export fdshift, fdshift!
 export fftfdr, fftfdr!
