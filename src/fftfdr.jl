@@ -67,9 +67,11 @@ end
     fftfdr_workspace!(workspace, specrogram) -> workspace
 
 Reinitialize `workspace` buffers using `spectrogram`.  An exception is thrown if
-`spectrogram` is type and/or size incompatible with `workspace`.
+`spectrogram` is type and/or size incompatible with `workspace`.  If `workspace`
+is `nothing`, then a new workspace is created.  The `bunaligned` keyword
+argument is ignored unless `workspace` is `nothing`.
 """
-function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real})
+function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
     if size(workspace.dest_rfft) !== (Nf÷2+1, Nt)
         error("input spectrogram has unexpected size")
@@ -80,6 +82,10 @@ function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real})
     # Size and eltype matches, FFT spectrogram into workspace
     mul!(workspace.dest_rfft, workspace.fplan, spectrogram)
     return workspace
+end
+
+function fftfdr_workspace!(::Nothing, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
+    fftfdr_workspace(spectrogram; bunaligned=bunaligned)
 end
 
 function fdshiftsum!(dest::AbstractVector, workspace, rate)
