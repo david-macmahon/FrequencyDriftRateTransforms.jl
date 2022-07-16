@@ -16,17 +16,25 @@ function phasor(k::Integer, n::Integer, r::Float32, N::Integer)
     cispi(-2*k*n*r/N)
 end
 
-function phasor(i::CartesianIndex, r, N)
-    phasor(i[1]-1, i[2]-1, r, N)
+function phasor(ij::CartesianIndex, r, N)
+    phasor(ij[1]-1, ij[2]-1, r, N)
 end
 
 """
-Create all the required intermediate storage buffers and FFT plan objects needed
-for creating a frequency drift rate matrix for `spectrogram` using `fftfdr` and
-return them in a container suitable for use as the `workspace` argument to
-`fftfdr`.  By default, the spectra in `spectrogram` have no alignment
+    fftfdr_workspace(specrogram[; bunaligned=true]) -> workspace
+
+Create a *workspace* suitable for use with `fdshift!` and `fftfdr!`.  The
+workspace includes all the required intermediate storage buffers and FFT plan
+objects needed for creating a frequency drift rate matrix for `spectrogram`
+using `fftfdr`.  One of these intermediate buffers is an `AbstractMatrix` that
+holds the FFT of `spectrogram` along the frequency dimension.  This FFT is
+performed as part of creating the workspace.  The first (fastest changing)
+dimension of `spectrogram` is frequency and the second dimension (slowest
+changing) is time. 
+
+By default, the spectra in columns of `spectrogram` have no alignment
 constraints, but if the columns of `fftfdr`'s output buffer will be suitably
-aligned for the FFT implementation, then `bunalingned` may be passed as false.
+aligned for the FFT implementation, then `bunalingned` may be passed as `false`.
 This will usually be the case if the number of frequency channels has several
 factors of 2, but it depends on the specifics of the FFT implementation.
 
@@ -35,88 +43,101 @@ spectrogram for a given rate.  This functionality is provided by `fdshift!`.
 """
 function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
-    mat = similar(spectrogram, Complex{eltype(spectrogram)}, Nf÷2+1, Nt)
-    vec = similar(mat, Nf÷2+1)
+    dest_rfft = similar(spectrogram, Complex{eltype(spectrogram)}, Nf÷2+1, Nt)
+    dest_phasor = similar(dest_rfft)
+    dest_sum = similar(dest_rfft, Nf÷2+1)
     fplan = plan_rfft(spectrogram, 1)
-    bplan1d = plan_brfft(vec, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
+    bplan1d = plan_brfft(dest_sum, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
     # The `2d` in `bplan2d` refers to the input/output arrays.
     # The dimensionality of the FFT is still 1D along the first dimension.
-    bplan2d = plan_brfft(mat, Nf, 1) # Assume output will always be aligned for now
-    (mat=mat, vec=vec, fplan=fplan, bplan1d=bplan1d, bplan2d=bplan2d)
+    bplan2d = plan_brfft(dest_rfft, Nf, 1) # Assume unaligned output for now
+    mul!(dest_rfft, fplan, spectrogram)
+    (
+        Nf=Nf,
+        dest_rfft=dest_rfft, 
+        dest_phasor=dest_phasor, 
+        dest_sum=dest_sum, 
+        fplan=fplan, 
+        bplan1d=bplan1d,
+        bplan2d=bplan2d
+    )
 end
 
-function fdshift!(dest::AbstractMatrix, spectrogram::AbstractMatrix, rate, workspace=nothing)
-    @assert size(dest) == size(spectrogram) "destination is the wrong size"
+"""
+    fftfdr_workspace!(workspace, specrogram) -> workspace
 
-    if workspace === nothing
-        workspace = fftfdr_workspace(spectrogram)
+Reinitialize `workspace` buffers using `spectrogram`.  An exception is thrown if
+`spectrogram` is type and/or size incompatible with `workspace`.
+"""
+function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real})
+    Nf, Nt = size(spectrogram)
+    if size(workspace.dest_rfft) !== (Nf÷2+1, Nt)
+        error("input spectrogram has unexpected size")
     end
-
-    Nf = size(spectrogram, 1)
-
-    # Calculate forward FFT of spectrogram to get into the Fourier domain
-    mul!(workspace.mat, workspace.fplan, spectrogram)
-
-    # Multiply the fourier domain spectra by the doppler rate phasors.
-    workspace.mat .*= phasor.(CartesianIndices(workspace.mat), Float32(rate), Nf)
-
-    # Store the backwards FFT of `workspace.mat` into `dest`.
-    mul!(dest, workspace.bplan2d, workspace.mat)
-end
-
-function fdshift(spectrogram::AbstractMatrix, rate, workspace=nothing)
-    dest = similar(spectrogram)
-    fdshift!(dest, spectrogram, rate, workspace)
-end
-
-function fdshiftsum!(dest::AbstractVector, spectrogram::AbstractMatrix, rate, workspace=nothing)
-    Nf = size(spectrogram, 1)
-    @assert length(dest) == Nf "Incorrect destination size"
-
-    if workspace === nothing
-        workspace = fftfdr_workspace(spectrogram)
+    if eltype(workspace.dest_rfft) !== Complex{eltype(spectrogram)}
+        error("input spectrogram has unexpected element type")
     end
+    # Size and eltype matches, FFT spectrogram into workspace
+    mul!(workspace.dest_rfft, workspace.fplan, spectrogram)
+    return workspace
+end
 
-    # Calculate forward FFT of spectrogram to get into the Fourier domain
-    mul!(workspace.mat, workspace.fplan, spectrogram)
+function fdshiftsum!(dest::AbstractVector, workspace, rate)
+    # Multiply the Fourier domain spectra by the doppler rate phasors.
+    workspace.dest_phasor .= workspace.dest_rfft .*
+        phasor.(CartesianIndices(workspace.dest_rfft), Float32(rate), workspace.Nf)
 
-    # Multiply the fourier domain spectra by the doppler rate phasors.
-    workspace.mat .*= phasor.(CartesianIndices(workspace.mat), Float32(rate), Nf)
+    # Sum over time in the post-phasor Fourier domain
+    sum!(workspace.dest_sum, workspace.dest_phasor)
 
-    # Sum over time in the Fourier domain
-    sum!(workspace.vec, workspace.mat)
+    # Store the backwards FFT of `workspace.dest_sum` into `dest`.
+    mul!(dest, workspace.bplan1d, workspace.dest_sum)
+end
 
-    # Store the backwards FFT of `workspace.vec` into `dest`.
-    mul!(dest, workspace.bplan1d, workspace.vec)
+function fdshiftsum(workspace, rate)
+    Nf = workspace.Nf
+    dest = similar(workspace.dest_sum, real(eltype(workspace.dest_sum)), Nf)
+    fdshiftsum!(dest, workspace, rate)
+end
+
+function fdshift!(dest::AbstractMatrix, workspace, rate)
+    # Multiply the Fourier domain spectra by the doppler rate phasors.
+    workspace.dest_phasor .= workspace.dest_rfft .*
+        phasor.(CartesianIndices(workspace.dest_rfft), Float32(rate), workspace.Nf)
+
+    # Store the backwards FFT of `workspace.dest_phasor` into `dest`.
+    mul!(dest, workspace.bplan2d, workspace.dest_phasor)
+end
+
+function fdshift(workspace, rate)
+    Nf = workspace.Nf
+    Nt = size(workspace.dest_rfft, 2)
+    dest = similar(workspace.dest_rfft, real(eltype(workspace.dest_rfft)), Nf, Nt)
+    fdshift!(dest, workspace, rate)
 end
 
 """
 Same as the `fftfdr` function, but store the results in `fdr`, which is also
-returned.  The size of `fdr` must be `(size(spectrogram,1), length(rates))`.
+returned.  The size of `fdr` must be `(workspace.Nf, length(rates))`.
 """
-function fftfdr!(fdr, spectrogram, rates, workspace=nothing)
-    Nf = size(spectrogram, 1)
+function fftfdr!(fdr, workspace, rates)
+    Nf = workspace.Nf
     Nr = length(rates)
     @assert size(fdr) == (Nf, Nr)
-    for (i,r) in enumerate(rates)
-        fdshiftsum!(@view(fdr[:,i]), spectrogram, r, workspace)
+    for (col, rate) in zip(eachcol(fdr), rates)
+        fdshiftsum!(col, workspace, rate)
     end
     return fdr
 end
 
 """
-Compute the frequency drift rate matrix for the given `spectrogram` and `rates`
-values using FFT shifting of each frequency spectrum.  The first (fastest
-changing) dimension of `spectrogram` is frequency and the second dimension
-(slowest changing) is time.  The size of the returned frequency drift rate
-matrix will be `(size(spectrogram,1), length(rates))`.  A workspace object
-obtained from `fftfdr_workspace` may be passed as `workspace`.  If `workspace`
-is omitted or `nothing`, then a workspace object will be created by calling
-`fftfdr_workspace`.
+Compute the frequency drift rate matrix for the given `workspace` and `rates`
+values using FFT shifting of each frequency spectrum. The size of the returned
+frequency drift rate matrix will be `(workspace.Nf, length(rates))`.
 """
-function fftfdr(spectrogram, rates, workspace=nothing)
-    Nf = size(spectrogram, 1)
+function fftfdr(workspace, rates)
+    Nf = workspace.Nf
     Nr = length(rates)
-    fdr = similar(spectrogram, Nf, Nr)
-    fftfdr!(fdr, spectrogram, rates, workspace)
+    fdr = similar(workspace.dest_sum, real(eltype(workspace.dest_sum)), Nf, Nr)
+    fftfdr!(fdr, workspace, rates)
 end
