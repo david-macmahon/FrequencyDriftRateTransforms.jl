@@ -8,6 +8,7 @@ export intfdr, intfdr!
 
 # fftfdr.jl
 export fftfdr_workspace
+export fdshiftsum, fdshiftsum!
 export fdshift, fdshift!
 export fftfdr, fftfdr!
 
