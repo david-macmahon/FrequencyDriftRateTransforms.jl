@@ -43,7 +43,7 @@ spectrogram for a given rate.  This functionality is provided by `fdshift!`.
 """
 function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
-    dest_rfft = similar(spectrogram, Complex{eltype(spectrogram)}, Nf÷2+1, Nt)
+    dest_rfft = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nt)
     dest_phasor = similar(dest_rfft)
     dest_sum = similar(dest_rfft, Nf÷2+1)
     fplan = plan_rfft(spectrogram, 1)
@@ -76,7 +76,7 @@ function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunal
     if size(workspace.dest_rfft) !== (Nf÷2+1, Nt)
         error("input spectrogram has unexpected size")
     end
-    if eltype(workspace.dest_rfft) !== Complex{eltype(spectrogram)}
+    if eltype(workspace.dest_rfft) !== complex(eltype(spectrogram))
         error("input spectrogram has unexpected element type")
     end
     # Size and eltype matches, FFT spectrogram into workspace
