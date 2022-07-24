@@ -7,11 +7,6 @@ using LinearAlgebra
 # https://github.com/JuliaMath/AbstractFFTs.jl/issues/71
 import FFTW
 
-# Type piracy to workaround CUDA.jl issue #1559.  For more details, see:
-# https://github.com/JuliaGPU/CUDA.jl/issues/1559
-import CUDA: CuArray
-AbstractFFTs.plan_brfft(A::CuArray, d::Integer, region; kwargs...) = plan_brfft(A, d, region)
-
 function phasor(k::Integer, n::Integer, r::Float32, N::Integer)
     cispi(-2*k*n*r/N)
 end
