@@ -303,15 +303,19 @@ function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
 end
 
 """
-Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace` and
-backwards FFT `workspace.Ys` into `dest`
+Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 """
-function postprocess!(dest, workspace)
+function postprocess!( workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
     workspace.Ys .*= postphase.(CartesianIndices(workspace.Ys),
                                 workspace.δr, workspace.Nf)
+end
+
+"""
+Output ZDT results into `dest`, which should have size `(Nf, Nl)`.
+"""
+function output!(dest, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
-    # TODO Make this a separate function?
     mul!(dest, workspace.brfft_plan, workspace.Ys)
 end
 
@@ -320,10 +324,11 @@ Compute the frequency drift rate matrix via the ZDop algorithm as specified in
 `workspace` and output results into `dest`.  `r0` can be optionally specified to
 override `workspace.r0`.
 """
-function zdtfdr!(dest, workspace; r0::Real=workspace.r0)
+function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
     preprocess!(workspace, Float32(r0))
     convolve!(workspace)
-    postprocess!(dest, workspace)
+    postprocess!(workspace)
+    output!(dest, workspace)
 end
 
 """
@@ -331,9 +336,32 @@ Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
 as specified in `workspace` and output results into `dest`.  `r0` can be
 optionally specified to override `workspace.r0`.
 """
-function zdtfdr!(dest, workspace, spectrogram; r0::Real=workspace.r0)
+function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram; r0::Real=workspace.r0)
     initialize!(workspace, spectrogram)
     zdtfdr!(dest, workspace; r0=r0)
+end
+
+"""
+Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+`workspace` up to but not including the final output FFT.  Returns `nothing`.
+Optionally, `r0` can be specified to override `workspace.r0`.
+"""
+function zdtfdr!(workspace::ZDTWorkspace; r0::Real=workspace.r0)
+    preprocess!(workspace, Float32(r0))
+    convolve!(workspace)
+    postprocess!(workspace)
+    return nothing
+end
+
+"""
+Input `spectrogram` into `workspace` and then compute the frequency drift rate
+matrix via the ZDop algorithm as specified in `workspace` up to but not
+including the final output FFT.  Returns `nothing`.  Optionally, `r0` can be
+specified to override `workspace.r0`.
+"""
+function zdtfdr!(workspace::ZDTWorkspace, spectrogram; r0::Real=workspace.r0)
+    input!(workspace, spectrogram)
+    zdtfdr!(workspace, r0=r0)
 end
 
 """

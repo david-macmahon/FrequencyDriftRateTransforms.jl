@@ -16,6 +16,7 @@ export fftfdr, fftfdr!
 export calcNl, growNr
 export ZDTWorkspace
 export initialize!
+export output!
 export zdtfdr, zdtfdr!
 
 # Type piracy to workaround CUDA.jl issue #1559.  For more details, see:
