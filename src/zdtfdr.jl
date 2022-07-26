@@ -256,11 +256,11 @@ end
 """
 Multiply `workspace.F` by `prephase` as per the parameters in `workspace`,
 storing results in `workspace.Yf`, then zero-pad the rest of `workspace.Y`.
+`r0` can be optionally specified to override `workspace.r0`.
 """
-function preprocess!(workspace)
+function preprocess!(workspace, r0::Float32=workspace.r0)
     Nf = workspace.Nf
     Nt = workspace.Nt
-    r0 = workspace.r0
     δr = workspace.δr
     F  = workspace.F
     Yf = workspace.Yf
@@ -317,39 +317,43 @@ end
 
 """
 Compute the frequency drift rate matrix via the ZDop algorithm as specified in
-`workspace` and output results into `dest`.
+`workspace` and output results into `dest`.  `r0` can be optionally specified to
+override `workspace.r0`.
 """
-function zdtfdr!(dest, workspace)
-    preprocess!(workspace)
+function zdtfdr!(dest, workspace; r0::Real=workspace.r0)
+    preprocess!(workspace, Float32(r0))
     convolve!(workspace)
     postprocess!(dest, workspace)
 end
 
 """
 Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
-as specified in `workspace` and output results into `dest`.
+as specified in `workspace` and output results into `dest`.  `r0` can be
+optionally specified to override `workspace.r0`.
 """
-function zdtfdr!(dest, workspace, spectrogram)
+function zdtfdr!(dest, workspace, spectrogram; r0::Real=workspace.r0)
     initialize!(workspace, spectrogram)
-    zdtfdr!(dest, workspace)
+    zdtfdr!(dest, workspace; r0=r0)
 end
 
 """
 Compute the frequency drift rate matrix via the ZDop algorithm as specified in
-`workspace` and return it as newly allocated matrix.
+`workspace` and return it as newly allocated matrix.  `r0` can be optionally
+specified to override `workspace.r0`.
 """
-function zdtfdr(workspace)
+function zdtfdr(workspace; r0::Real=workspace.r0)
     Nf = workspace.Nf
     Nr = workspace.Nr
     dest = similar(workspace.Ys, real(eltype(workspace.Ys)), Nf, Nr)
-    zdtfdr!(dest, workspace)
+    zdtfdr!(dest, workspace; r0=r0)
 end
 
 """
 Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
-as specified in `workspace` and return it as newly allocated matrix.
+as specified in `workspace` and return it as newly allocated matrix.  `r0` can
+be optionally specified to override `workspace.r0`.
 """
-function zdtfdr(workspace, spectrogram)
+function zdtfdr(workspace, spectrogram; r0::Real=workspace.r0)
     initialize!(workspace, spectrogram)
-    zdtfdr(workspace)
+    zdtfdr(workspace; r0=r0)
 end
