@@ -33,9 +33,10 @@ mutable struct ZDTWorkspace
     factors::Union{Tuple,AbstractVector}
 
     F::AbstractMatrix{<:Complex}
+    Yf::AbstractMatrix{<:Complex}
     Y::AbstractMatrix{<:Complex}
+    Ys::AbstractMatrix{<:Complex}
     V::AbstractMatrix{<:Complex}
-    S::AbstractMatrix{<:Complex}
 
     # Input/output FFT plans
     rfft_plan::AbstractFFTs.Plan
@@ -52,21 +53,24 @@ mutable struct ZDTWorkspace
         Nf, Nt = size(spectrogram)
         Nl = calcNl(Nt, Nr, factors)
 
+        F = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nt)
         Y = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nl)
         V = similar(Y)
 
-        F = @view Y[:, 1:Nt]
-        S = @view Y[:, 1:Nr]
+        Yf = @view Y[:, 1:Nt]
+        Ys = @view Y[:, 1:Nr]
 
         ws = new(
             Nf, Nt, r0, δr, Nr, Nl, factors,
-            F, Y, V, S
+            F, Yf, Y, Ys, V
         )
 
         # Call function to plan FFTs.  This allows for specialization based on
         # the Array type of spectrogram.
         plan_ffts!(ws, spectrogram; output_aligned=output_aligned)
 
+        # Initialize F with FFT of spectrogram
+        initialize!(ws, spectrogram)
         # Precompute V
         computeV!(ws)
 
@@ -106,11 +110,11 @@ function plan_ffts!(workspace::ZDTWorkspace,
                     output_aligned::Bool=false)
     Nf = workspace.Nf
     Y = workspace.Y
-    S = workspace.S
+    Ys = workspace.Ys
     brfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
 
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
-    workspace.brfft_plan = plan_brfft(S, Nf, 1; flags=brfft_flags)
+    workspace.brfft_plan = plan_brfft(Ys, Nf, 1; flags=brfft_flags)
 
     workspace.fft_plan = plan_fft!(Y, 2)
     workspace.bfft_plan = plan_bfft!(Y, 2)
@@ -145,7 +149,7 @@ function plan_ffts!(workspace::ZDTWorkspace,
 
     Nf = workspace.Nf
     Y = workspace.Y
-    S = workspace.S
+    Ys = workspace.Ys
     brfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
 
     workspace.fft_plan = plan_fft!(Y, 2)
@@ -156,7 +160,7 @@ function plan_ffts!(workspace::ZDTWorkspace,
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
     replace_workarea(workspace.rfft_plan, workspace.fft_plan)
 
-    workspace.brfft_plan = plan_brfft(S, Nf, 1; flags=brfft_flags)
+    workspace.brfft_plan = plan_brfft(Ys, Nf, 1; flags=brfft_flags)
     replace_workarea(workspace.brfft_plan, workspace.fft_plan)
 
     return nothing
@@ -242,17 +246,32 @@ function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
 end
 
 """
-FFT `spectrogram` into `workspace.F`, multiply `workspace.F` by `prephase` as
-per the parameters in `workspace`, and zero-pad the rest of `workspace.Y`.
+FFT `spectrogram` into `workspace.F`.
 """
-function preprocess!(workspace, spectrogram)
+function initialize!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
     mul!(workspace.F, workspace.rfft_plan, spectrogram)
-    # Multiply `workspace.F` by `prephase` as per the parameters in `workspace`
-    workspace.F .*= prephase.(CartesianIndices(workspace.F),
-                              workspace.r0, workspace.δr, workspace.Nf)
-    # Zero-pad the rest of `workspace.Y`.
-    workspace.Y[:, workspace.Nt+1:end] .= zero(eltype(workspace.Y))
+end
+
+"""
+Multiply `workspace.F` by `prephase` as per the parameters in `workspace`,
+storing results in `workspace.Yf`, then zero-pad the rest of `workspace.Y`.
+"""
+function preprocess!(workspace)
+    Nf = workspace.Nf
+    Nt = workspace.Nt
+    r0 = workspace.r0
+    δr = workspace.δr
+    F  = workspace.F
+    Yf = workspace.Yf
+    Y  = workspace.Y
+
+    # Multiply `F` by `prephase` as per the parameters from `workspace`
+    Yf .= F .* prephase.(CartesianIndices(F), r0, δr, Nf)
+
+    # Zero-pad the rest of `Y`
+    # TODO: Add Yz field to ZDTWorkspace for this view?
+    fill!(@view(Y[:, Nt+1:end]), zero(eltype(Y)))
 end
 
 """
@@ -284,15 +303,26 @@ function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
 end
 
 """
-Multiply `workspace.S` by `postphase` as per the parameters in `workspace` and
-backwards FFT `workspace.S` into `dest`
+Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace` and
+backwards FFT `workspace.Ys` into `dest`
 """
 function postprocess!(dest, workspace)
-    # Multiply `workspace.S` by `postphase` as per the parameters in `workspace`
-    workspace.S .*= postphase.(CartesianIndices(workspace.S),
-                               workspace.δr, workspace.Nf)
-    # Backwards FFT `workspace.S` into `dest`
-    mul!(dest, workspace.brfft_plan, workspace.S)
+    # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
+    workspace.Ys .*= postphase.(CartesianIndices(workspace.Ys),
+                                workspace.δr, workspace.Nf)
+    # Backwards FFT `workspace.Ys` into `dest`
+    # TODO Make this a separate function?
+    mul!(dest, workspace.brfft_plan, workspace.Ys)
+end
+
+"""
+Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+`workspace` and output results into `dest`.
+"""
+function zdtfdr!(dest, workspace)
+    preprocess!(workspace)
+    convolve!(workspace)
+    postprocess!(dest, workspace)
 end
 
 """
@@ -300,9 +330,19 @@ Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
 as specified in `workspace` and output results into `dest`.
 """
 function zdtfdr!(dest, workspace, spectrogram)
-    preprocess!(workspace, spectrogram)
-    convolve!(workspace)
-    postprocess!(dest, workspace)
+    initialize!(workspace, spectrogram)
+    zdtfdr!(dest, workspace)
+end
+
+"""
+Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+`workspace` and return it as newly allocated matrix.
+"""
+function zdtfdr(workspace)
+    Nf = workspace.Nf
+    Nr = workspace.Nr
+    dest = similar(workspace.Ys, real(eltype(workspace.Ys)), Nf, Nr)
+    zdtfdr!(dest, workspace)
 end
 
 """
@@ -310,8 +350,6 @@ Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
 as specified in `workspace` and return it as newly allocated matrix.
 """
 function zdtfdr(workspace, spectrogram)
-    Nf = workspace.Nf
-    Nr = workspace.Nr
-    dest = similar(workspace.S, real(eltype(workspace.S)), Nf, Nr)
-    zdtfdr!(dest, workspace, spectrogram)
+    initialize!(workspace, spectrogram)
+    zdtfdr(workspace)
 end
