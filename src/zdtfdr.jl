@@ -70,7 +70,7 @@ mutable struct ZDTWorkspace
         plan_ffts!(ws, spectrogram; output_aligned=output_aligned)
 
         # Initialize F with FFT of spectrogram
-        initialize!(ws, spectrogram)
+        input!(ws, spectrogram)
         # Precompute V
         computeV!(ws)
 
@@ -246,9 +246,9 @@ function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
 end
 
 """
-FFT `spectrogram` into `workspace.F`.
+Input `spectrogram` into `workspace`.
 """
-function initialize!(workspace, spectrogram)
+function input!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
     mul!(workspace.F, workspace.rfft_plan, spectrogram)
 end
@@ -337,7 +337,7 @@ as specified in `workspace` and output results into `dest`.  `r0` can be
 optionally specified to override `workspace.r0`.
 """
 function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram; r0::Real=workspace.r0)
-    initialize!(workspace, spectrogram)
+    input!(workspace, spectrogram)
     zdtfdr!(dest, workspace; r0=r0)
 end
 
@@ -382,6 +382,6 @@ as specified in `workspace` and return it as newly allocated matrix.  `r0` can
 be optionally specified to override `workspace.r0`.
 """
 function zdtfdr(workspace, spectrogram; r0::Real=workspace.r0)
-    initialize!(workspace, spectrogram)
+    input!(workspace, spectrogram)
     zdtfdr(workspace; r0=r0)
 end
