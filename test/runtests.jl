@@ -19,17 +19,21 @@ rates = 0:-0.25:-5
     peak_idx = findfirst(==(peak), fdr)
     @test peak_idx == CartesianIndex(55, 11)
 
-    workspace = fftfdr_workspace(spectrogram)
-    fdr = fftfdr(workspace, rates)
-    peak = maximum(fdr)
-    peak_idx = findfirst(==(peak), fdr)
-    @test peak_idx == CartesianIndex(55, 11)
+    fftws = fftfdr_workspace(spectrogram)
+    ffdr = fftfdr(fftws, rates)
+    pkval, pkidx = findmax(ffdr)
+    @test pkidx == CartesianIndex(55, 11)
 
     # De-dopper spectrogram with known drift rate
-    dedop = fdshift(workspace, -2.43)
+    dedop = fdshift(fftws, -2.43)
     # Find maximum value for each time sample
     peaks = maximum(dedop, dims=1)
     # All peaks should be in channel 55
     peak_idxs = map(((i,p),)->findfirst(==(p), dedop[:,i]), enumerate(peaks))
     @test all(peak_idxs .∈ Ref(55:56))
+
+    zdtws = ZDTWorkspace(spectrogram, rates)
+    zfdr = zdtfdr(zdtws)
+    pkval, pkidx = findmax(zfdr)
+    @test pkidx == CartesianIndex(55, 11)
 end;
