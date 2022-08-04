@@ -246,7 +246,7 @@ function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
 end
 
 """
-Input `spectrogram` into `workspace`.
+Input `spectrogram` into `workspace.F`.
 """
 function input!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
@@ -305,7 +305,7 @@ end
 """
 Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 """
-function postprocess!( workspace)
+function postprocess!(workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
     workspace.Ys .*= postphase.(CartesianIndices(workspace.Ys),
                                 workspace.δr, workspace.Nf)
