@@ -274,6 +274,10 @@ function preprocess!(workspace, r0::Float32=workspace.r0)
     fill!(@view(Y[:, Nt+1:end]), zero(eltype(Y)))
 end
 
+function preprocess!(workspace, r0::Real)
+    preprocess!(workspace, Float32(r0))
+end
+
 """
 Perform CZT convolution step for data in `workspace` by doing:
 1. In-place FFT `workspace.Y`
@@ -325,7 +329,7 @@ Compute the frequency drift rate matrix via the ZDop algorithm as specified in
 override `workspace.r0`.
 """
 function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
-    preprocess!(workspace, Float32(r0))
+    preprocess!(workspace, r0)
     convolve!(workspace)
     postprocess!(workspace)
     output!(dest, workspace)
@@ -347,7 +351,7 @@ Compute the frequency drift rate matrix via the ZDop algorithm as specified in
 Optionally, `r0` can be specified to override `workspace.r0`.
 """
 function zdtfdr!(workspace::ZDTWorkspace; r0::Real=workspace.r0)
-    preprocess!(workspace, Float32(r0))
+    preprocess!(workspace, r0)
     convolve!(workspace)
     postprocess!(workspace)
     return nothing
