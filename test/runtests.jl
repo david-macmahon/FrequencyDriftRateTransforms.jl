@@ -3,6 +3,7 @@ using Test
 
 using Downloads
 using HDF5
+using H5Zbitshuffle
 using FFTW
 
 # Download test dataset and read specific range of frequencies (with known
