@@ -1,21 +1,29 @@
+authors = ["David MacMahon <davidm@astro.berkeley.edu> and contributors"]
 name = "DopplerDriftSearch"
 uuid = "fb9f5a76-33a9-4170-a29d-c7447c215bd7"
-authors = ["David MacMahon <davidm@astro.berkeley.edu> and contributors"]
 version = "0.1.0"
-
-[deps]
-AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
-CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
-LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [compat]
 AbstractFFTs = "1"
-CUDA = "3"
+CUDA = "4"
 FFTW = "1"
 julia = "1.6"
 
+[deps]
+AbstractFFTs = "621f4979-c628-5d54-868e-fcf4e3e8185c"
+FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Requires = "ae029012-a4dd-5104-9daa-d747884805df"
+
+[weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+
+[extensions]
+CUDADopplerDriftSearchExt = "CUDA"
+
 [extras]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]

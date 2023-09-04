@@ -19,14 +19,19 @@ export input!, output!
 export preprocess!, convolve!, postprocess!
 export zdtfdr, zdtfdr!
 
-# Type piracy to workaround CUDA.jl issue #1559.  For more details, see:
-# https://github.com/JuliaGPU/CUDA.jl/issues/1559
-import AbstractFFTs: plan_brfft
-import CUDA: CuArray
-plan_brfft(A::CuArray, d::Integer, region; kwargs...) = plan_brfft(A, d, region)
-
-# Import CUDA functions for optimizing workarea usage
-import CUDA: unsafe_free!, CUFFT.cufftSetWorkArea
+# For Julia < 1.9.0
+if !isdefined(Base, :get_extension)
+    # Add DataFrame constructor for Vector{Filterbank.Header} if/when DataFrames
+    # is imported.
+    using Requires
+end
+@static if !isdefined(Base, :get_extension)
+    function __init__()
+        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
+            include("../ext/CUDADopplerDriftSearchExt.jl")
+        end
+    end
+end
 
 """
 Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`
