@@ -105,6 +105,10 @@ function Base.show(io::IO, ws::ZDTWorkspace)
     print(io, ")")
 end
 
+function Base.sizeof(ws::ZDTWorkspace)
+    mapreduce(p->sizeof(getproperty(ws, p)), +, propertynames(ws))
+end
+
 """
 Make the ZDT's FFT plans for `spectrogram::AbstractArray` for which a more
 specialized method is not available.
