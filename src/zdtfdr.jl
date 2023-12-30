@@ -276,7 +276,7 @@ function postprocess!(workspace)
 end
 
 """
-Output ZDT results into `dest`, which should have size `(Nf, Nl)`.
+Output ZDT results into `dest`, which should have size `(Nf, Nr)`.
 """
 function output!(dest, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
