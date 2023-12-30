@@ -1,6 +1,6 @@
 module CUDADopplerDriftSearchExt
 
-import DopplerDriftSearch: plan_ffts!, ZDTWorkspace
+import DopplerDriftSearch: plan_ffts!, ZDTWorkspace, output!
 
 if isdefined(Base, :get_extension)
     import FFTW
@@ -85,6 +85,21 @@ function plan_ffts!(workspace::ZDTWorkspace,
     end
 
     return nothing
+end
+
+"""
+Output ZDT results into `dest`, which should have size `(Nf, Nr)`.  This method
+exists to avoid an allocating hack that CUDA.jl employs to work around a CUFFT
+"known issue" that "cuFFT will always overwrite the input for out-of-place C2R
+transform".  In our case, we don't care whether the input, `workspace.Ys`, gets
+clobbered, but it does mean that `output!` cannot be called more than once per
+ZDT operation.
+"""
+function output!(dest::CuArray{<:Real}, workspace)
+    # Backwards FFT `workspace.Ys` into `dest`
+    update_stream(workspace.brfft_plan)
+    cufftExecC2R(workspace.brfft_plan, workspace.Ys, dest)
+    return dest
 end
 
 end # module CUDADopplerDriftSearchExt
