@@ -6,7 +6,6 @@ if isdefined(Base, :get_extension)
     import FFTW
     using CUDA: CuArray
     using CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
-    import AbstractFFTs: plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize1d, cufftSetWorkArea,
                        update_stream, cufftExecC2R,
@@ -15,16 +14,11 @@ else
     import ..FFTW
     import ..CUDA: CuArray
     using ..CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
-    import ..AbstractFFTs: plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize1d, cufftSetWorkArea,
                          update_stream, cufftExecC2R,
                          CUFFT_C2C, CUFFT_C2R, CUFFT_R2C
 end
-
-# Type piracy to workaround CUDA.jl issue #1559.  For more details, see:
-# https://github.com/JuliaGPU/CUDA.jl/issues/1559
-plan_brfft(A::CuArray, d::Integer, region; kwargs...) = plan_brfft(A, d, region)
 
 """
 Make the ZDT's FFT plans for `spectrogram.CuArray`.  CUFFT requires workareas
@@ -46,7 +40,6 @@ function plan_ffts!(workspace::ZDTWorkspace,
     Nf = workspace.Nf
     Y = workspace.Y
     Ys = workspace.Ys
-    brfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
     workareasize = Ref{Csize_t}(0)
 
     # Plan biggest FFT first
@@ -73,7 +66,7 @@ function plan_ffts!(workspace::ZDTWorkspace,
         cufftSetWorkArea(workspace.rfft_plan, workspace.fft_workarea)
     end
 
-    workspace.brfft_plan = plan_brfft(Ys, Nf, 1; flags=brfft_flags)
+    workspace.brfft_plan = plan_brfft(Ys, Nf, 1)
     # Get size of plan's workarea
     cufftGetSize1d(workspace.brfft_plan, Nf, CUFFT_C2R,
                    size(Ys, 2), workareasize)
