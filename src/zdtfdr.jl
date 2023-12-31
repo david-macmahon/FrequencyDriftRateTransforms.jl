@@ -45,6 +45,10 @@ mutable struct ZDTWorkspace
     # CZT FFT plans (in-place)
     fft_plan::AbstractFFTs.Plan
     bfft_plan::AbstractFFTs.Plan
+
+    # Some specializations (e.g. for CUDA) need to allocate a work area for
+    # FFTs, which can be stored here.
+    fft_workarea::Union{Nothing,AbstractArray{UInt8}}
     
     function ZDTWorkspace(spectrogram::AbstractMatrix{<:Real},
                           r0::Real, δr::Real, Nr::Integer,
@@ -126,6 +130,8 @@ function plan_ffts!(workspace::ZDTWorkspace,
 
     workspace.fft_plan = plan_fft!(Y, 2)
     workspace.bfft_plan = plan_bfft!(Y, 2)
+
+    workspace.fft_workarea = nothing
 
     return nothing
 end

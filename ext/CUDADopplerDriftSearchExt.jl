@@ -47,41 +47,40 @@ function plan_ffts!(workspace::ZDTWorkspace,
     Y = workspace.Y
     Ys = workspace.Ys
     brfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
-    workareasize = Int64[0]
+    workareasize = Ref{Csize_t}(0)
 
     # Plan biggest FFT first
     workspace.fft_plan = plan_fft!(Y, 2)
 
     # Get size of plan's workarea
     cufftGetSize1d(workspace.fft_plan, size(Y, 2), CUFFT_C2C,
-                   size(Y, 1), pointer(workareasize))
-    #@info "got work area size $(Base.format_bytes(workareasize[1])) for fft of $(size(Y))"
+                   size(Y, 1), workareasize)
     # Allocate workarea on GPU
-    workarea = CuArray{UInt8}(undef, workareasize[1])
+    workspace.fft_workarea = CuArray{UInt8}(undef, workareasize[])
     # Set plan's work area
-    cufftSetWorkArea(workspace.fft_plan, workarea)
+    cufftSetWorkArea(workspace.fft_plan, workspace.fft_workarea)
 
     workspace.bfft_plan = plan_bfft!(Y, 2)
-    cufftSetWorkArea(workspace.bfft_plan, workarea)
+    cufftSetWorkArea(workspace.bfft_plan, workspace.fft_workarea)
 
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
     # Get size of plan's workarea
     cufftGetSize1d(workspace.rfft_plan, size(spectrogram, 1), CUFFT_R2C,
-                   size(spectrogram, 2), pointer(workareasize))
-    #@info "got work area size $(Base.format_bytes(workareasize[1])) for rfft of $(size(spectrogram))"
-    if workareasize[1] <= sizeof(workarea)
+                   size(spectrogram, 2), workareasize)
+    #@info "got work area size $(Base.format_bytes(workareasize[])) for rfft of $(size(spectrogram))"
+    if workareasize[] <= sizeof(workspace.fft_workarea)
         #@info "replacing workarea for rfft_plan"
-        cufftSetWorkArea(workspace.rfft_plan, workarea)
+        cufftSetWorkArea(workspace.rfft_plan, workspace.fft_workarea)
     end
 
     workspace.brfft_plan = plan_brfft(Ys, Nf, 1; flags=brfft_flags)
     # Get size of plan's workarea
     cufftGetSize1d(workspace.brfft_plan, Nf, CUFFT_C2R,
-                   size(Ys, 2), pointer(workareasize))
-    #@info "got work area size $(Base.format_bytes(workareasize[1])) for brfft of ($Nf, $(size(Ys, 2)))"
-    if workareasize[1] <= sizeof(workarea)
+                   size(Ys, 2), workareasize)
+    #@info "got work area size $(Base.format_bytes(workareasize[])) for brfft of ($Nf, $(size(Ys, 2)))"
+    if workareasize[] <= sizeof(workspace.fft_workarea)
         #@info "replacing workarea for brfft_plan"
-        cufftSetWorkArea(workspace.brfft_plan, workarea)
+        cufftSetWorkArea(workspace.brfft_plan, workspace.fft_workarea)
     end
 
     return nothing
