@@ -6,7 +6,7 @@ function intshift!(dout, din, rate)
     @assert size(din) == size(dout)
     for (i, (cin, cout)) in enumerate(zip(eachcol(din), eachcol(dout)))
         n = round(rate*(i-1))
-        circshift!(cout, cin, n)
+        circshift!(cout, cin, -n)
     end
     return dout
 end

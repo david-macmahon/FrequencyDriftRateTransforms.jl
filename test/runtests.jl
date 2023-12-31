@@ -6,13 +6,13 @@ using Test
     d[2,:] .= 1
 
     dshift1_expected = zeros(Float32, 3, 2)
+    dshift1_expected[1,2] = 1
     dshift1_expected[2,1] = 1
-    dshift1_expected[3,2] = 1
 
     fdr_expected = Float32[
-        1 0 0
-        1 2 1
         0 0 1
+        1 2 1
+        1 0 0
     ]
 
     @testset "intfdr" begin

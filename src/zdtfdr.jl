@@ -144,7 +144,7 @@ function should be used to populate elements in the first `Nr` columns of `V`.
 the input spectrogram.
 """
 function vlow(k::Integer, l::Integer, δr::Float32, Nf::Integer)
-    cispi(k * l^2 * δr / Nf)
+    cispi(-k * l^2 * δr / Nf)
 end
 
 """
@@ -204,7 +204,7 @@ Generate phase factors used in the *pre-multiply* step of the CZT.  `k` and `l`
 are zero-based offsets.
 """
 function prephase(k::Integer, l::Integer, r0::Float32, δr::Float32, Nf::Integer)
-    cispi(-k * l * (l * δr + 2 * r0) / Nf)
+    cispi(k * l * (l * δr + 2 * r0) / Nf)
 end
 
 """
@@ -265,7 +265,7 @@ Generate phase factors used in the *post-multiply* step of the CZT.  `k` and `l`
 are zero-based offsets.
 """
 function postphase(k::Integer, l::Integer, δr::Float32, Nf::Integer)
-    cispi(-k * l * l * δr / Nf)
+    cispi(k * l * l * δr / Nf)
 end
 
 """

@@ -8,7 +8,7 @@ using LinearAlgebra
 import FFTW
 
 function phasor(k::Integer, n::Integer, r::Float32, N::Integer)
-    cispi(-2*k*n*r/N)
+    cispi(2*k*n*r/N)
 end
 
 function phasor(ij::CartesianIndex, r, N)
