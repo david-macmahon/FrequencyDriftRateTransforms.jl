@@ -1,40 +1,42 @@
 using DopplerDriftSearch
 using Test
 
-using Downloads
-using HDF5
-using H5Zbitshuffle
-using FFTW
+@testset verbose=true "simple tests" begin
+    d = zeros(Float32, 3, 2)
+    d[2,:] .= 1
 
-# Download test dataset and read specific range of frequencies (with known
-# drifting signal)
-voyager_url = "http://blpd14.ssl.berkeley.edu/voyager_2020/single_coarse_channel/single_coarse_guppi_59046_80036_DIAG_VOYAGER-1_0011.rawspec.0000.h5"
-h5 = h5open(Downloads.download(voyager_url))
-freq_range = range(659935, length=150)
-spectrogram = h5["data"][freq_range,1,:]
-rates = 0:-0.25:-5
+    dshift1_expected = zeros(Float32, 3, 2)
+    dshift1_expected[2,1] = 1
+    dshift1_expected[3,2] = 1
 
-@testset "DopplerDriftSearch.jl" begin
-    fdr = intfdr(spectrogram, rates)
-    peak = maximum(fdr)
-    peak_idx = findfirst(==(peak), fdr)
-    @test peak_idx == CartesianIndex(55, 11)
+    fdr_expected = Float32[
+        1 0 0
+        1 2 1
+        0 0 1
+    ]
 
-    fftws = fftfdr_workspace(spectrogram)
-    ffdr = fftfdr(fftws, rates)
-    pkval, pkidx = findmax(ffdr)
-    @test pkidx == CartesianIndex(55, 11)
+    @testset "intfdr" begin
+        @test intshift(d, 1) == dshift1_expected 
+        @test intfdr(d, -1:1) == fdr_expected
+    end
 
-    # De-dopper spectrogram with known drift rate
-    dedop = fdshift(fftws, -2.43)
-    # Find maximum value for each time sample
-    peaks = maximum(dedop, dims=1)
-    # All peaks should be in channel 55
-    peak_idxs = map(((i,p),)->findfirst(==(p), dedop[:,i]), enumerate(peaks))
-    @test all(peak_idxs .∈ Ref(55:56))
+    @testset "fftfdr" begin
+        fftws = fftfdr_workspace(d)
+        @test fdshift(fftws, 1) ./ 3 ≈ dshift1_expected 
+        @test fftfdr(fftws, -1:1) ./ 3 ≈ fdr_expected
+    end
 
-    zdtws = ZDTWorkspace(spectrogram, rates)
-    zfdr = zdtfdr(zdtws)
-    pkval, pkidx = findmax(zfdr)
-    @test pkidx == CartesianIndex(55, 11)
+    @testset "zdtfdr [FFTW]" begin
+        zdtws = ZDTWorkspace(d, -1:1)
+        @test zdtfdr(zdtws) ./ 12 ≈ fdr_expected
+    end
+
+    if isdefined(Main, :CUDA)
+        @testset "zdtfdr [CUDA]" begin
+            g = CuArray(d)
+            gdtws = ZDTWorkspace(g, -1:1)
+            @test Array(zdtfdr(gdtws)) ./ 12 ≈ fdr_expected
+        end
+    end
+
 end;
