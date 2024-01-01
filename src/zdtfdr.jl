@@ -181,7 +181,7 @@ end
 
 """
 Compute the contents of `workspace.V`, which is the FFT of the convolving
-function of the CZT for the Zdop parameters contained in `workspace`.
+function of the CZT for the ZDT parameters contained in `workspace`.
 """
 function computeV!(workspace::ZDTWorkspace)
     Nf = workspace.Nf
@@ -294,7 +294,7 @@ function output!(dest, workspace)
 end
 
 """
-Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+Compute the frequency drift rate matrix via the ZDT algorithm as specified in
 `workspace` and output results into `dest`.  `r0` can be optionally specified to
 override `workspace.r0`.
 """
@@ -306,7 +306,7 @@ function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
 end
 
 """
-Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
+Compute the frequency drift rate matrix for `spectrogram` via the ZDT algorithm
 as specified in `workspace` and output results into `dest`.  `r0` can be
 optionally specified to override `workspace.r0`.
 """
@@ -316,7 +316,7 @@ function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram; r0::Real=
 end
 
 """
-Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+Compute the frequency drift rate matrix via the ZDT algorithm as specified in
 `workspace` up to but not including the final output FFT.  Returns `nothing`.
 Optionally, `r0` can be specified to override `workspace.r0`.
 """
@@ -329,9 +329,9 @@ end
 
 """
 Input `spectrogram` into `workspace` and then compute the frequency drift rate
-matrix via the ZDop algorithm as specified in `workspace` up to but not
-including the final output FFT.  Returns `nothing`.  Optionally, `r0` can be
-specified to override `workspace.r0`.
+matrix via the ZDT algorithm as specified in `workspace` up to but not including
+the final output FFT.  Returns `nothing`.  Optionally, `r0` can be specified to
+override `workspace.r0`.
 """
 function zdtfdr!(workspace::ZDTWorkspace, spectrogram; r0::Real=workspace.r0)
     input!(workspace, spectrogram)
@@ -339,7 +339,7 @@ function zdtfdr!(workspace::ZDTWorkspace, spectrogram; r0::Real=workspace.r0)
 end
 
 """
-Compute the frequency drift rate matrix via the ZDop algorithm as specified in
+Compute the frequency drift rate matrix via the ZDT algorithm as specified in
 `workspace` and return it as newly allocated matrix.  `r0` can be optionally
 specified to override `workspace.r0`.
 """
@@ -351,7 +351,7 @@ function zdtfdr(workspace; r0::Real=workspace.r0)
 end
 
 """
-Compute the frequency drift rate matrix for `spectrogram` via the ZDop algorithm
+Compute the frequency drift rate matrix for `spectrogram` via the ZDT algorithm
 as specified in `workspace` and return it as newly allocated matrix.  `r0` can
 be optionally specified to override `workspace.r0`.
 """
