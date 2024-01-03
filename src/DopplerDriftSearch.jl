@@ -13,7 +13,7 @@ export fdshift, fdshift!
 export fftfdr, fftfdr!
 
 # zdtfdr.jl
-export calcNl, growNr
+export calcNl, growNr, estimate_memory
 export ZDTWorkspace
 export input!, output!
 export preprocess!, convolve!, postprocess!
