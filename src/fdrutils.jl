@@ -1,10 +1,12 @@
 using Statistics
 
 """
-Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`
-and the given `spectrogram` and `Nr` (number of rates).  The returned `Matrix`
-will be similar to `spectrogram` in type and size of first dimension, but its
-second dimension will be `Nr`.
+    create_fdr(spectrogram, Nr::Integer)
+
+Create an uninitialized `Matrix` suitable for use with `intfdr!`, `fftfdr!`, or
+`zdtfdr!` and the given `spectrogram` and `Nr` (number of rates).  The returned
+`Matrix` will be similar to `spectrogram` in type and size of first dimension,
+but its second dimension will be `Nr`.
 """
 function create_fdr(spectrogram, Nr::Integer)
     Nf = size(spectrogram, 1)
@@ -12,10 +14,12 @@ function create_fdr(spectrogram, Nr::Integer)
 end
 
 """
-Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`
-and the given `spectrogram` and `rates`.  The returned `Matrix` will be similar
-to `spectrogram` in type and size of first dimension, but its second dimension
-will be sized by the length of `rates`.
+    create_fdr(spectrogram, rates)
+
+Create an uninitialized `Matrix` suitable for use with `intfdr!`, `fftfdr!`, or
+`zdtfdr!` and the given `spectrogram` and `rates`.  The returned `Matrix` will
+be similar to `spectrogram` in type and size of first dimension, but its second
+dimension will be sized by the length of `rates`.
 """
 function create_fdr(spectrogram, rates)
     create_fdr(spectrogram, length(rates))
