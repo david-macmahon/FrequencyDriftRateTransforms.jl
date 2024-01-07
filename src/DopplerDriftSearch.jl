@@ -1,6 +1,7 @@
 module DopplerDriftSearch
 
-export create_fdr
+# fdrutils.jl
+export create_fdr, fdrnormalize!
 
 # intfdr.jl
 export intshift, intshift!
@@ -13,11 +14,13 @@ export fdshift, fdshift!
 export fftfdr, fftfdr!
 
 # zdtfdr.jl
-export calcNl, growNr, estimate_memory
 export ZDTWorkspace
 export input!, output!
 export preprocess!, convolve!, postprocess!
 export zdtfdr, zdtfdr!
+
+# zdtutils.jl
+export calcNl, growNr, estimate_memory, driftrates
 
 # For Julia < 1.9.0
 if !isdefined(Base, :get_extension)
@@ -33,29 +36,10 @@ end
     end
 end
 
-"""
-Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`
-and the given `spectrogram` and `Nr` (number of rates).  The returned `Matrix`
-will be similar to `spectrogram` in type and size of first dimension, but its
-second dimension will be `Nr`.
-"""
-function create_fdr(spectrogram, Nr::Integer)
-    Nf = size(spectrogram, 1)
-    similar(spectrogram, Nf, Nr)
-end
-
-"""
-Create an uninitialized `Matrix` suitable for use with `intfdr!` or `fftfdr!`
-and the given `spectrogram` and `rates`.  The returned `Matrix` will be similar
-to `spectrogram` in type and size of first dimension, but its second dimension
-will be sized by the length of `rates`.
-"""
-function create_fdr(spectrogram, rates)
-    create_fdr(spectrogram, length(rates))
-end
-
+include("fdrutils.jl")
 include("intfdr.jl")
 include("fftfdr.jl")
 include("zdtfdr.jl")
+include("zdtutils.jl")
 
 end # module DopplerDriftSearch
