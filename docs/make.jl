@@ -5,7 +5,12 @@ makedocs(
     sitename = "DopplerDriftSearch",
     format = Documenter.HTML(),
     modules = [DopplerDriftSearch],
-    remotes = nothing
+    remotes = nothing,
+    pages = [
+        "Contents" => "index.md",
+        "API" => "api.md",
+        "Index" => "autoindex.md"
+    ]
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.
