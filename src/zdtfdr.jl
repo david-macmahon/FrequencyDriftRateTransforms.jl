@@ -98,6 +98,8 @@ function Base.sizeof(ws::ZDTWorkspace)
 end
 
 """
+    plan_ffts!(workspace::ZDTWorkspace, spectrogram; output_aligned=false)
+
 Make the ZDT's FFT plans for `spectrogram::AbstractArray` for which a more
 specialized method is not available.
 """
@@ -121,51 +123,47 @@ function plan_ffts!(workspace::ZDTWorkspace,
 end
 
 """
+    vlow(k, l, δr::Float32, Nf) -> Complex{Float32}
+    vlow(kl::CartesianIndex, δr::Float32, Nf::Integer) -> ComplexF32
+
 Used to generate values for the `(begin+k,begin+l)` element of `ZDTWorkspace.V`
-(before its FFT is computed).  `k` and `l` are zero-based offsets.  This
-function should be used to populate elements in the first `Nr` columns of `V`.
-`δr` is the drift rate step size.  `Nf` is the number of frequency channels in
-the input spectrogram.
+(before its FFT is computed).  `k` and `l` are zero-based offsets.  `kl` is a
+one-based `CartesianIndex`.  This function should be used to populate elements
+in the first `Nr` columns of `V`.  `δr` is the drift rate step size.  `Nf` is
+the number of frequency channels in the input spectrogram.
 """
 function vlow(k::Integer, l::Integer, δr::Float32, Nf::Integer)
     cispi(-k * l^2 * δr / Nf)
 end
 
-"""
-Used to generate values for the `(begin+k,begin+l)` element of `ZDTWorkspace.V`
-(before its FFT is computed).  `k` and `l` are zero-based offsets.  This
-function should be used to populate elements in the last `Nt-1` columns of `V`.
-`δr` is the drift rate step size.  `Nf` is the number of frequency channels in
-the input spectrogram.  `Nl` is the size of the second dimension of `V`.
-"""
-function vhigh(k::Integer, l::Integer, δr::Float32, Nf::Integer, Nl::Integer)
-    vlow(k, Nl-l, δr, Nf)
-end
-
-"""
-Used to generate values for the `kl` element of `ZDTWorkspace.V` (before its FFT
-is computed).  `kl` is a `CartesianIndex`.  This function should be used to
-populate elements in the first `Nr` columns of `V`.  `δr` is the drift rate step
-size.  `Nf` is the number of frequency channels in the input spectrogram.
-"""
 function vlow(kl::CartesianIndex, δr::Float32, Nf::Integer)
     vlow(kl[1]-1, kl[2]-1, δr, Nf)
 end
 
 """
-Used to generate values for the `kl` element of `ZDTWorkspace.V` (before its FFT
-is computed).  `kl` is a `CartesianIndex`.  This function should be used to
-populate elements in the last `Nt-1` columns of `V`.  `δr` is the drift rate step
-size.  `Nf` is the number of frequency channels in the input spectrogram.  `Nl`
-is the sie of the second dimension of `V`.
+    vhigh(k, l, δr::Float32, Nf, Nl) -> ComplexF32
+    vhigh(kl::CartesianIndex, δr::Float32, Nf::Integer, Nl::Integer)
+
+Used to generate values for the `(begin+k,begin+l)` element of `ZDTWorkspace.V`
+(before its FFT is computed).  `k` and `l` are zero-based offsets.  `kl` is a
+one-based `CartesianIndex`.  This function should be used to populate elements
+in the last `Nt-1` columns of `V`.  `δr` is the drift rate step size.  `Nf` is
+the number of frequency channels in the input spectrogram.  `Nl` is the size of
+the second dimension of `V`.
 """
+function vhigh(k::Integer, l::Integer, δr::Float32, Nf::Integer, Nl::Integer)
+    vlow(k, Nl-l, δr, Nf)
+end
+
 function vhigh(kl::CartesianIndex, δr::Float32, Nf::Integer, Nl::Integer)
     vlow(kl[1]-1, Nl-(kl[2]-1), δr, Nf)
 end
 
 """
-Compute the contents of `workspace.V`, which is the FFT of the convolving
-function of the CZT for the ZDT parameters contained in `workspace`.
+    computeV!(workspace::ZDTWorkspace)
+
+Compute and update the contents of `workspace.V`, which is the FFT of the
+convolving function of the CZT for the ZDT parameters contained in `workspace`.
 """
 function computeV!(workspace::ZDTWorkspace)
     Nf = workspace.Nf
@@ -184,23 +182,24 @@ function computeV!(workspace::ZDTWorkspace)
 end
 
 """
+    prephase(k, l, r0::Float32, δr, Nf) -> ComplexF32
+    prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
+
 Generate phase factors used in the *pre-multiply* step of the CZT.  `k` and `l`
-are zero-based offsets.
+are zero-based offsets. `kl` is a one-based `CartesianIndex`.
 """
 function prephase(k::Integer, l::Integer, r0::Float32, δr::Float32, Nf::Integer)
     cispi(k * l * (l * δr + 2 * r0) / Nf)
 end
 
-"""
-Generate phase factors used in the *pre-multiply* step of the CZT.  `kl` is a
-`CartesianIndex`.
-"""
 function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
     prephase(kl[1]-1, kl[2]-1, r0, δr, Nf)
 end
 
 """
-Input `spectrogram` into `workspace.F`.
+    input!(workspace, spectrogram)
+
+Input FFT of `spectrogram` into `workspace.F`.
 """
 function input!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
@@ -208,6 +207,8 @@ function input!(workspace, spectrogram)
 end
 
 """
+    preprocess!(workspace, r0=workspace.r0)
+
 Multiply `workspace.F` by `prephase` as per the parameters in `workspace`,
 storing results in `workspace.Yf`, then zero-pad the rest of `workspace.Y`.
 `r0` can be optionally specified to override `workspace.r0`.
@@ -233,10 +234,12 @@ function preprocess!(workspace, r0::Real)
 end
 
 """
+    convolve!(workspace)
+
 Perform CZT convolution step for data in `workspace` by doing:
 1. In-place FFT `workspace.Y`
 2. In-place multiply of `workspace.Y` by `workspace.V`
-3. In-place backwards multiply of `Workspace.Y`
+3. In-place backwards FFT of `Workspace.Y`
 """
 function convolve!(workspace)
     mul!(workspace.Y, workspace.fft_plan, workspace.Y)
@@ -245,22 +248,23 @@ function convolve!(workspace)
 end
 
 """
+    postphase(k::Integer, l::Integer, δr::Float32, Nf::Integer) -> ComplexF32
+    postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
+
 Generate phase factors used in the *post-multiply* step of the CZT.  `k` and `l`
-are zero-based offsets.
+are zero-based offsets.  `kl` is a one-based `CartesianIndex`.
 """
 function postphase(k::Integer, l::Integer, δr::Float32, Nf::Integer)
     cispi(k * l * l * δr / Nf)
 end
 
-"""
-Generate phase factors used in the *post-multiply* step of the CZT.  `kl` is a
-`CartesianIndex`.
-"""
 function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
     postphase(kl[1]-1, kl[2]-1, δr, Nf)
 end
 
 """
+    postprocess!(workspace)
+
 Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 """
 function postprocess!(workspace)
@@ -270,6 +274,8 @@ function postprocess!(workspace)
 end
 
 """
+    output!(dest, workspace) -> dest
+
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.
 """
 function output!(dest, workspace)
@@ -278,9 +284,13 @@ function output!(dest, workspace)
 end
 
 """
-Compute the frequency drift rate matrix via the ZDT algorithm as specified in
-`workspace` and output results into `dest`.  `r0` can be optionally specified to
-override `workspace.r0`.
+    zdtfdr!([dest,] workspace[, spectrogram]; r0=workspace.r0)
+
+If `spectrogram` is given, `input!` it into `workspace.F`.  Compute the
+frequency drift rate matrix via the ZDT algorithm as specified in
+`workspace`.  If `dest` is given, `output!` frequency drift rate matrix into
+`dest` and return `dest`, otherwise return `nothing`.  An alternate `r0` may be
+given to override `workspace.r0`.
 """
 function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
     preprocess!(workspace, r0)
@@ -289,21 +299,11 @@ function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
     output!(dest, workspace)
 end
 
-"""
-Compute the frequency drift rate matrix for `spectrogram` via the ZDT algorithm
-as specified in `workspace` and output results into `dest`.  `r0` can be
-optionally specified to override `workspace.r0`.
-"""
 function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram; r0::Real=workspace.r0)
     input!(workspace, spectrogram)
     zdtfdr!(dest, workspace; r0=r0)
 end
 
-"""
-Compute the frequency drift rate matrix via the ZDT algorithm as specified in
-`workspace` up to but not including the final output FFT.  Returns `nothing`.
-Optionally, `r0` can be specified to override `workspace.r0`.
-"""
 function zdtfdr!(workspace::ZDTWorkspace; r0::Real=workspace.r0)
     preprocess!(workspace, r0)
     convolve!(workspace)
@@ -311,21 +311,18 @@ function zdtfdr!(workspace::ZDTWorkspace; r0::Real=workspace.r0)
     return nothing
 end
 
-"""
-Input `spectrogram` into `workspace` and then compute the frequency drift rate
-matrix via the ZDT algorithm as specified in `workspace` up to but not including
-the final output FFT.  Returns `nothing`.  Optionally, `r0` can be specified to
-override `workspace.r0`.
-"""
 function zdtfdr!(workspace::ZDTWorkspace, spectrogram; r0::Real=workspace.r0)
     input!(workspace, spectrogram)
     zdtfdr!(workspace, r0=r0)
 end
 
 """
-Compute the frequency drift rate matrix via the ZDT algorithm as specified in
-`workspace` and return it as newly allocated matrix.  `r0` can be optionally
-specified to override `workspace.r0`.
+    zdtfdr(workspace[, spectrogram]; r0=workspace.r0)
+
+If `spectrogram` is given, `input!` it into `workspace.F`.  Compute the
+frequency drift rate matrix via the ZDT algorithm as specified in
+`workspace`, `output!` frequency drift rate matrix to a newly allocated `Matrix`
+and return it.  An alternate `r0` may be given to override `workspace.r0`.
 """
 function zdtfdr(workspace; r0::Real=workspace.r0)
     Nf = workspace.Nf
@@ -334,11 +331,6 @@ function zdtfdr(workspace; r0::Real=workspace.r0)
     zdtfdr!(dest, workspace; r0=r0)
 end
 
-"""
-Compute the frequency drift rate matrix for `spectrogram` via the ZDT algorithm
-as specified in `workspace` and return it as newly allocated matrix.  `r0` can
-be optionally specified to override `workspace.r0`.
-"""
 function zdtfdr(workspace, spectrogram; r0::Real=workspace.r0)
     input!(workspace, spectrogram)
     zdtfdr(workspace; r0=r0)

@@ -1,4 +1,6 @@
 """
+    intshift!(dout, din, rate) -> dout
+
 Circularly shift each column of `din` by an amount proportional to `rate` and
 store the results in `dout`.  The first column is un-shifted (i.e. shifted 0).
 """
@@ -12,6 +14,8 @@ function intshift!(dout, din, rate)
 end
 
 """
+    intshift(din, rate) -> dout
+
 Circularly shift each column of `din` by an amount proportional to `rate` and
 return the results in a new Matrix similar to `din`.  The first column is
 un-shifted (i.e. shifted 0).
@@ -22,6 +26,8 @@ function intshift(din, rate)
 end
 
 """
+    intfdr!(fdr, spectrogram, rates) -> fdr
+
 Same as the `intfdr` function, but store the results in `fdr`, which is also
 returned.  The size of `fdr` must be `(size(spectrogram,1), length(rates))`.
 """
@@ -39,6 +45,8 @@ function intfdr!(fdr, spectrogram, rates)
 end
 
 """
+     intfdr(spectrogram, rates) -> fdr
+
 Compute the frequency drift rate matrix for the given `spectrogram` and `rates`
 values by shifting each frequency spectrum by an integer numbers of frequency
 channels.  The first (fastest changing) dimension of `spectrogram` is frequency

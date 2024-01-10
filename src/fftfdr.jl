@@ -118,6 +118,8 @@ function fdshift(workspace, rate)
 end
 
 """
+    fftfdr!(fdr, workspace, rates) -> fdr
+
 Same as the `fftfdr` function, but store the results in `fdr`, which is also
 returned.  The size of `fdr` must be `(workspace.Nf, length(rates))`.
 """
@@ -132,6 +134,8 @@ function fftfdr!(fdr, workspace, rates)
 end
 
 """
+    fftfdr(workspace, rates) -> fdr
+
 Compute the frequency drift rate matrix for the given `workspace` and `rates`
 values using FFT shifting of each frequency spectrum. The size of the returned
 frequency drift rate matrix will be `(workspace.Nf, length(rates))`.

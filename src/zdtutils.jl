@@ -1,4 +1,6 @@
 """
+    calcNl(Nt, Nr, factors=(2,3,5)) -> Nl
+
 Calculate the smallest FFT size greater than `Nt + Nr - 1` and having only
 factors from the given `factors`.
 """
@@ -7,8 +9,10 @@ function calcNl(Nt, Nr, factors::Union{Tuple,AbstractVector}=(2,3,5))
 end
 
 """
-Compute the largest `Nr` that fits in the smallest FFT size greater than `Nt +
-Nr - 1` and having only factors from the given `factors`.
+    growNr(Nt, Nr, factors=(2,3,5)) -> newNr
+
+Compute `newNR` that is the largest `Nr` that fits in the smallest FFT size
+greater than `Nt + Nr - 1` and having only factors from the given `factors`.
 """
 function growNr(Nt::Integer, Nr::Integer, factors::Union{Tuple,AbstractVector}=(2,3,5))
     return calcNl(Nt, Nr, factors) - Nt + 1
@@ -40,10 +44,11 @@ function estimate_memory(Nf, Nt, Nr, Ni=1, No=1;
 end
 
 """
-    driftrates(zdtws::ZDTWorkspace; r0=zdtws.r0)
+    driftrates(zdtws::ZDTWorkspace; r0=zdtws.r0) -> Range
 
 Return the Range of normalized drift rates that `zdtws` has been configured to
-use.  An alternate *normalized* `r0` value may be given.
+use.  An alternate *normalized* `r0` value may be given to override
+`workspace.r0`.
 """
 function driftrates(zdtws::ZDTWorkspace, r0=zdtws.r0)
     range(r0, step=zdtws.δr, length=zdtws.Nr)

@@ -49,6 +49,9 @@ function getPlanHandle(args...)
 end
 
 """
+    plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuArray{<:Real};
+               output_aligned::Bool=false)
+
 Very specific function to make FFT plans for `workspace` with "auto allocation"
 disabled.  This means that we need to allocate and assign the work area
 ourselves.  We do this to share one workarea across all of the FFT plans.  The
@@ -176,6 +179,8 @@ function plan_ffts!(workspace::ZDTWorkspace,
 end
 
 """
+    output!(dest::CuArray{<:Real}, workspace) -> dest
+
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.  This method
 exists to avoid an allocating hack that CUDA.jl employs to work around a CUFFT
 "known issue" that "cuFFT will always overwrite the input for out-of-place C2R
