@@ -4,7 +4,8 @@ using DopplerDriftSearch
 makedocs(
     sitename = "DopplerDriftSearch",
     format = Documenter.HTML(),
-    modules = [DopplerDriftSearch]
+    modules = [DopplerDriftSearch],
+    remotes = nothing
 )
 
 # Documenter can also automatically deploy documentation to gh-pages.
