@@ -36,6 +36,7 @@ end
     end
 end
 
+include("extstubs.jl")
 include("fdrutils.jl")
 include("intfdr.jl")
 include("fftfdr.jl")
