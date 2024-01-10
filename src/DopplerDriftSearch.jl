@@ -19,8 +19,8 @@ export input!, output!
 export preprocess!, convolve!, postprocess!
 export zdtfdr, zdtfdr!
 
-# zdtutils.jl
-export calcNl, growNr, estimate_memory, driftrates
+# zdtutils.jl, batchrates.jl
+export calcNl, growNr, estimate_memory, driftrates, batchrates
 
 # For Julia < 1.9.0
 if !isdefined(Base, :get_extension)
@@ -36,6 +36,7 @@ end
     end
 end
 
+include("batchrates.jl")
 include("extstubs.jl")
 include("fdrutils.jl")
 include("intfdr.jl")
