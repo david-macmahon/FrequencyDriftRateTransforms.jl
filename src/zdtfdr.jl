@@ -286,52 +286,56 @@ end
 """
     zdtfdr!([dest,] workspace[, spectrogram]; r0=workspace.r0)
 
-If `spectrogram` is given, `input!` it into `workspace.F`.  Compute the
-frequency drift rate matrix via the ZDT algorithm as specified in
-`workspace`.  If `dest` is given, `output!` frequency drift rate matrix into
-`dest` and return `dest`, otherwise return `nothing`.  An alternate `r0` may be
-given to override `workspace.r0`.
+If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
+algorithm as specified in `workspace`.  If `dest` is given, `output!` frequency
+drift rate matrix into `dest` and return `dest`, otherwise return `nothing`.  An
+alternate `r0` may be given to override `workspace.r0`.  `dest` and `r0` may
+also be iterators to compute multiple ZDTs from the same input for different r0
+values.
 """
-function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace; r0::Real=workspace.r0)
+function zdtfdr!(dests, workspace, spectrogram=nothing; r0=workspace.r0)
+    if spectrogram !== nothing
+        input!(workspace, spectrogram)
+    end
+
+    for (dest, rate) in zip(dests, Iterators.cycle(r0))
+        preprocess!(workspace, rate)
+        convolve!(workspace)
+        postprocess!(workspace)
+        output!(dest, workspace)
+    end
+
+    return dests
+end
+
+function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
+    zdtfdr!((dest,), workspace, spectrogram; r0)
+    return dest
+end
+
+function zdtfdr!(workspace::ZDTWorkspace, spectrogram=nothing; r0::Real=workspace.r0)
+    if spectrogram !== nothing
+        input!(workspace, spectrogram)
+    end
+
     preprocess!(workspace, r0)
     convolve!(workspace)
     postprocess!(workspace)
-    output!(dest, workspace)
-end
 
-function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram; r0::Real=workspace.r0)
-    input!(workspace, spectrogram)
-    zdtfdr!(dest, workspace; r0=r0)
-end
-
-function zdtfdr!(workspace::ZDTWorkspace; r0::Real=workspace.r0)
-    preprocess!(workspace, r0)
-    convolve!(workspace)
-    postprocess!(workspace)
     return nothing
-end
-
-function zdtfdr!(workspace::ZDTWorkspace, spectrogram; r0::Real=workspace.r0)
-    input!(workspace, spectrogram)
-    zdtfdr!(workspace, r0=r0)
 end
 
 """
     zdtfdr(workspace[, spectrogram]; r0=workspace.r0)
 
-If `spectrogram` is given, `input!` it into `workspace.F`.  Compute the
-frequency drift rate matrix via the ZDT algorithm as specified in
-`workspace`, `output!` frequency drift rate matrix to a newly allocated `Matrix`
-and return it.  An alternate `r0` may be given to override `workspace.r0`.
+If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
+algorithm as specified in `workspace`, `output!` frequency drift rate matrix to
+a newly allocated `Matrix` and return it.  An alternate `r0` may be given to
+override `workspace.r0`.
 """
-function zdtfdr(workspace; r0::Real=workspace.r0)
+function zdtfdr(workspace, spectrogram=nothing; r0::Real=workspace.r0)
     Nf = workspace.Nf
     Nr = workspace.Nr
     dest = similar(workspace.Ys, real(eltype(workspace.Ys)), Nf, Nr)
-    zdtfdr!(dest, workspace; r0=r0)
-end
-
-function zdtfdr(workspace, spectrogram; r0::Real=workspace.r0)
-    input!(workspace, spectrogram)
-    zdtfdr(workspace; r0=r0)
+    zdtfdr!(dest, workspace, spectrogram; r0=r0)
 end
