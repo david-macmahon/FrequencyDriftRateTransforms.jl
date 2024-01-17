@@ -36,10 +36,19 @@ function estimate_memory(Nf, Nt, Nr, Ni=1, No=1;
                          factors::Union{Tuple,AbstractVector}=(2,3,5))
     Nl = calcNl(Nt, Nr, factors)
 
+    # Ni spectrogram buffers outside workspace,
+    # plus 1 buffer in workspace (`F`),
+    # plus 2 real FFT work areas
+    Ni += 3
+
+    # Nz is number of Nf x Nl complex buffers in the workspace (`Y` and `V`)
+    # plus one complex FFT work area
+    Nz = 3
+
     sizeof(Float32) * (
-        Nf * Nt * (Ni+1) +   # Input buffers (`Ni` outside + 1 inside workspace)
-        Nf * Nl *  3     +   # ZDT buffers and FFT work area (loosely)
-        Nf * Nr *  No        # Output buffers (`No` outside workspace)
+        (Nf * Nt) * Ni +   # Input buffers and real FFT work areas
+        (Nf * Nl) * Nz +   # ZDT complex buffers and FFT work area (loosely)
+        (Nf * Nr) * No     # Output buffers
     )
 end
 
