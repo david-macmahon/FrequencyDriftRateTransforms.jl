@@ -4,14 +4,14 @@ import DopplerDriftSearch: plan_ffts!, ZDTWorkspace, output!
 
 if isdefined(Base, :get_extension)
     import FFTW
-    using CUDA: CuArray
+    using CUDA: CuArray, CuMatrix
     using CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
     import ..FFTW
-    import ..CUDA: CuArray
+    import ..CUDA: CuArray, CuMatrix
     using ..CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
@@ -19,10 +19,10 @@ else
 end
 
 """
-    plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuArray{<:Real};
+    plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuMatrix{<:Real};
                output_aligned::Bool=false)
 
-Make the ZDT's FFT plans for `spectrogram::CuArray`.  CUFFT requires work areas
+Make the ZDT's FFT plans for `spectrogram::CuMatrix`.  CUFFT requires work areas
 for FFT plans, which can be as large as the inputs.  The complex-to-complex FFT
 plans' work areas used in the ZDT tend to be large and therefore require large
 work areas.  After creating the forward complex-to-complex FFT plan first, we
@@ -39,7 +39,7 @@ there and there is flexibility in not being constrained by a shared work area,
 so each of those plans gets its own work area.
 """
 function plan_ffts!(workspace::ZDTWorkspace,
-                    spectrogram::CuArray{<:Real};
+                    spectrogram::CuMatrix{<:Real};
                     output_aligned::Bool=false)
     Nf = workspace.Nf
     Y = workspace.Y
@@ -70,7 +70,7 @@ function plan_ffts!(workspace::ZDTWorkspace,
 end
 
 """
-    output!(dest::CuArray{<:Real}, workspace) -> dest
+    output!(dest::CuMatrix{<:Real}, workspace) -> dest
 
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.  This method
 exists to avoid an allocating hack that CUDA.jl employs to work around a CUFFT
@@ -79,7 +79,7 @@ transform".  In our case, we don't care whether the input, `workspace.Ys`, gets
 clobbered, but it does mean that `output!` cannot be called more than once per
 ZDT operation.
 """
-function output!(dest::CuArray{<:Real}, workspace)
+function output!(dest::CuMatrix{<:Real}, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
     update_stream(workspace.brfft_plan)
     cufftExecC2R(workspace.brfft_plan, workspace.Ys, dest)
