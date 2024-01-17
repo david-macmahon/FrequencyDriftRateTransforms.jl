@@ -1,6 +1,6 @@
-module PlotsDopplerDriftSearchExt
+module PlotsFrequencyDriftRateTransformsExt
 
-import DopplerDriftSearch: clusterheatmap, waterfall
+import FrequencyDriftRateTransforms: clusterheatmap, waterfall
 
 if isdefined(Base, :get_extension)
     import Plots: heatmap, scatter!, plot!, default
@@ -141,4 +141,4 @@ function waterfall(ftmatrix, chan, rate, dfdt=1; nchans=0,
     p
 end
 
-end # module PlotsDopplerDriftSearchExt
+end # module PlotsFrequencyDriftRateTransformsExt

@@ -1,4 +1,4 @@
-# DopplerDriftSearch.jl
+# FrequencyDriftRateTransforms.jl
 
 ```@contents
 Pages = [

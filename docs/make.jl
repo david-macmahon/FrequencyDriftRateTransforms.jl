@@ -1,10 +1,10 @@
 using Documenter
-using DopplerDriftSearch
+using FrequencyDriftRateTransforms
 
 makedocs(
-    sitename = "DopplerDriftSearch",
+    sitename = "FrequencyDriftRateTransforms", # Add ".jl"?
     format = Documenter.HTML(),
-    modules = [DopplerDriftSearch],
+    modules = [FrequencyDriftRateTransforms],
     remotes = nothing,
     pages = [
         "Contents" => "index.md",

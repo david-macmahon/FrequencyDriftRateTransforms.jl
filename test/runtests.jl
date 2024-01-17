@@ -1,4 +1,4 @@
-using DopplerDriftSearch
+using FrequencyDriftRateTransforms
 using Test
 
 @testset verbose=true "simple tests" begin

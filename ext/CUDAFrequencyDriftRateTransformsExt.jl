@@ -1,6 +1,7 @@
-module CUDADopplerDriftSearchExt
+module CUDAFrequencyDriftRateTransformsExt
 
-import DopplerDriftSearch: plan_ffts!, ZDTWorkspace, output!, fdrsynchronize
+import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, output!,
+                                     fdrsynchronize
 
 if isdefined(Base, :get_extension)
     import FFTW
@@ -94,4 +95,4 @@ function output!(dest::CuMatrix{<:Real}, workspace)
     return dest
 end
 
-end # module CUDADopplerDriftSearchExt
+end # module CUDAFrequencyDriftRateTransformsExt

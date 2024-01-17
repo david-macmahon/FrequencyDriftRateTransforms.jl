@@ -1,4 +1,4 @@
-name = "DopplerDriftSearch"
+name = "FrequencyDriftRateTransforms"
 uuid = "fb9f5a76-33a9-4170-a29d-c7447c215bd7"
 authors = ["David MacMahon <davidm@astro.berkeley.edu> and contributors"]
 version = "0.4.0"
@@ -15,8 +15,8 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 
 [extensions]
-CUDADopplerDriftSearchExt = "CUDA"
-PlotsDopplerDriftSearchExt = "Plots"
+CUDAFrequencyDriftRateTransformsExt = "CUDA"
+PlotsFrequencyDriftRateTransformsExt = "Plots"
 
 [compat]
 AbstractFFTs = "1"

@@ -1,4 +1,4 @@
-using DopplerDriftSearch
+using FrequencyDriftRateTransforms
 using Test
 
 using Downloads
@@ -14,7 +14,7 @@ freq_range = range(659935, length=150)
 spectrogram = h5["data"][freq_range,1,:]
 rates = 0:-0.25:-5
 
-@testset "DopplerDriftSearch.jl" begin
+@testset "FrequencyDriftRateTransforms.jl" begin
     fdr = intfdr(spectrogram, rates)
     peak = maximum(fdr)
     peak_idx = findfirst(==(peak), fdr)

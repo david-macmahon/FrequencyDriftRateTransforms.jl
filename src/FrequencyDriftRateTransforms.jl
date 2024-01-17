@@ -1,4 +1,4 @@
-module DopplerDriftSearch
+module FrequencyDriftRateTransforms
 
 # fdrutils.jl
 export create_fdr, fdrstats, fdrsynchronize
@@ -32,7 +32,10 @@ end
 @static if !isdefined(Base, :get_extension)
     function __init__()
         @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-            include("../ext/CUDADopplerDriftSearchExt.jl")
+            include("../ext/CUDAFrequencyDriftRateTransformsExt.jl")
+        end
+        @require Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80" begin
+            include("../ext/PlotsFrequencyDriftRateTransformsExt.jl")
         end
     end
 end
@@ -45,4 +48,4 @@ include("fftfdr.jl")
 include("zdtfdr.jl")
 include("zdtutils.jl")
 
-end # module DopplerDriftSearch
+end # module FrequencyDriftRateTransforms

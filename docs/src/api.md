@@ -1,5 +1,5 @@
-# DopplerDriftSearch API
+# FrequencyDriftRateTransforms API
 
 ```@autodocs
-Modules = [DopplerDriftSearch]
+Modules = [FrequencyDriftRateTransforms]
 ```
