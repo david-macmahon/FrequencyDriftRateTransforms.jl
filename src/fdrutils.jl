@@ -50,6 +50,7 @@ function fdrstats(fdrs::AbstractVector)
 end
 
 """
+    fdrnormalize(scalar, m, s) -> normalized_scalar
     fdrnormalize!(fdr[, m, s]) -> same fdr (normalized in place)
     fdrnormalize!(fdrs[, m, s]) -> same fdrs (normalized in place)
 
@@ -61,6 +62,11 @@ standard deviation (aka sigma) value used is the minimum standard deviation of
 all columns of `fdr` or all columns of all matrices in `fdrs`.  The mean and
 standard deviation may also be given explicitly as `m` and `s`, respectively.
 """
+function fdrnormalize(fdr::Number, m, s)
+    fdr = (fdr - m) / s
+    return fdr
+end
+
 function fdrnormalize!(fdr, m, s)
     fdr .= (fdr .- m) ./ s
     return fdr
@@ -81,6 +87,35 @@ end
 function fdrnormalize!(fdrs::AbstractVector)
     m, s = fdrstats(fdrs)
     return fdrnormalize!(fdrs, m, s)
+end
+
+"""
+    fdrdenormalize(snr, m, s) -> threshold
+    fdrdenormalize(snr, fdr) -> threshold
+    fdrdenormalize(snr, fdrs) -> threshold
+
+Compute the denormalized value of `snr` using the mean `m` and standard
+deviation `s`.  If frequency drift rate matrix `fdr` (or matrices `fdrs`) is
+passed instead of `m` and `s` the statistics will be computed from the given
+data.  The denormalized value can be used as the threshold when detecting
+proto-hits in `fdr` rather than normalizing `fdr` and using the `snr` value
+directly.
+"""
+function fdrdenormalize(snr, m, s)
+    threshold = snr * s + m
+    return threshold
+end
+
+function fdrdenormalize(snr, fdr)
+    m, s = fdrstats(fdr)
+    threshold = fdrdenormalize(snr, m, s)
+    return threshold
+end
+
+function fdrdenormalize(snr, fdrs::AbstractVector)
+    m, s = fdrstats(fdrs)
+    threshold = fdrdenormalize(snr, m, s)
+    return threshold
 end
 
 """
