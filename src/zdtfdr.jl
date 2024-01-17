@@ -7,7 +7,7 @@ using LinearAlgebra
 # https://github.com/JuliaMath/AbstractFFTs.jl/issues/71
 import FFTW
 
-mutable struct ZDTWorkspace
+mutable struct ZDTWorkspace{T}
     Nf::Int
     Nt::Int
     r0::Float32
@@ -34,10 +34,10 @@ mutable struct ZDTWorkspace
     # FFTs, which can be stored here.
     fft_workarea::Union{Nothing,AbstractArray{UInt8}}
     
-    function ZDTWorkspace(spectrogram::AbstractMatrix{<:Real},
+    function ZDTWorkspace(spectrogram::T,
                           r0::Real, δr::Real, Nr::Integer,
                           factors::Union{Tuple,AbstractVector}=(2,3,5);
-                          output_aligned=false)
+                          output_aligned=false) where {T<:AbstractMatrix{<:Real}}
         Nf, Nt = size(spectrogram)
         Nl = calcNl(Nt, Nr, factors)
 
@@ -52,7 +52,7 @@ mutable struct ZDTWorkspace
         Yf = @view Y[:, 1:Nt]
         Ys = @view Y[:, 1:Nr]
 
-        ws = new(
+        ws = new{T}(
             Nf, Nt, r0, δr, Nr, Nl, factors,
             F, Yf, Y, Ys, V
         )
