@@ -66,6 +66,9 @@ mutable struct ZDTWorkspace{T}
         # Precompute V
         computeV!(ws)
 
+        # Wait for input! and computeV! or not, depending on typeof(spectrogram)
+        fdrsynchronize(typeof(spectrogram))
+
         return ws
     end
 end # mutable struct ZDTWorkspace

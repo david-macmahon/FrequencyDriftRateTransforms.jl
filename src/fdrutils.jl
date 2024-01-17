@@ -60,6 +60,17 @@ function fdrnormalize!(fdrs::AbstractVector)
 end
 
 """
+    fdrsynchronize(::Type{<:AbstractArray})
+
+The default implementaion of this function does nothing, but it should be called
+whenever synchronization might be needed.  Methods can be defined for types that
+are more specific than `AbstractArray` when they have synchroniztion
+requirements and mechanisms (e.g. `CuArray`).
+"""
+function fdrsynchronize(::Type{<:AbstractArray})
+end
+
+"""
     clamprange(r::CartesianIndices, array::AbstractArray) -> CartesianIndices
 
 Clamp the CartesianIndices range `r` to the dimensions of `a`.

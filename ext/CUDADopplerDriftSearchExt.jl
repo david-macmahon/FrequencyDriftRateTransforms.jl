@@ -1,21 +1,29 @@
 module CUDADopplerDriftSearchExt
 
-import DopplerDriftSearch: plan_ffts!, ZDTWorkspace, output!
+import DopplerDriftSearch: plan_ffts!, ZDTWorkspace, output!, fdrsynchronize
 
 if isdefined(Base, :get_extension)
     import FFTW
-    using CUDA: CuArray, CuMatrix
+    using CUDA: CuArray, CuMatrix, synchronize
     using CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
     import ..FFTW
-    import ..CUDA: CuArray, CuMatrix
+    import ..CUDA: CuArray, CuMatrix, synchronize
     using ..CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                          update_stream, cufftExecC2R
+end
+
+"""
+    fdrsynchronize(::Type{<:CuArray})
+CUDA-specific implementaion of this function that calls CUDA's synchronize()`.
+"""
+function fdrsynchronize(::Type{<:CuArray})
+    synchronize()
 end
 
 """

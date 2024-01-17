@@ -1,7 +1,7 @@
 module DopplerDriftSearch
 
 # fdrutils.jl
-export create_fdr, fdrnormalize!
+export create_fdr, fdrnormalize!, fdrsynchronize
 
 # intfdr.jl
 export intshift, intshift!
