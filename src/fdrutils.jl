@@ -26,37 +26,61 @@ function create_fdr(spectrogram, rates)
 end
 
 """
-    fdrnormalize!(fdr) -> same fdr (normalized in place)
+    fdrstats(fdr) -> (mean, std)
+    fdrstats(fdrs) -> (mean, std)
 
-Normalize the Frequency-Drift-Rate (FDR) Matrix `fdr` in-place by subtracting
-the mean and dividing by the standard deviation.  The mean is calculated as the
-mean of the first column (i.e. along the frequency axis for the first drift
-rate).  The standard deviation (aka sigma) value used is the minimum standard
-deviation of all columns of `fdr`.
+Compute the mean and standard deviation of the Frequency-Drift-Rate (FDR) Matrix
+`fdr` or matrices `fdrs`.  The mean is calculated as the mean of the first
+column, i.e. along the frequency axis for the first drift rate of `fdr` or the
+first matrix of `fdrs`).  The standard deviation (aka sigma) value used is the
+minimum standard deviation of all columns of `fdr` or all columns of all
+matrices in `fdrs`.
 """
-function fdrnormalize!(fdr)
+function fdrstats(fdr)
     m = mean(@view fdr[:,1])
     s = minimum(std(fdr, dims=1))
-    fdr .= (fdr .- m) ./ s
+    (m, s)
 end
 
-"""
-    fdrnormalize!(fdrs::AbstractVector) -> same fdr (normalized in place)
-
-Normalize the Frequency-Drift-Rate (FDR) Matrices `fdrs` in-place by subtracting
-the mean and dividing by the standard deviation.  The mean is calculated as the
-mean of the first column (i.e. along the frequency axis for the first drift
-rate) of the first Matrix.  The standard deviation (aka sigma) value used is the
-minimum standard deviation of all columns of all `fdrs`.  This is intended for
-use when the FDR has been computed in pieces (e.g. to fit into GPU memory).
-"""
-function fdrnormalize!(fdrs::AbstractVector)
+function fdrstats(fdrs::AbstractVector)
     fdr1 = fdrs[1]
     m = mean(@view fdr1[:,1])
     s = minimum(minimum.(std.(fdrs, dims=1)))
+    (m, s)
+end
+
+"""
+    fdrnormalize!(fdr[, m, s]) -> same fdr (normalized in place)
+    fdrnormalize!(fdrs[, m, s]) -> same fdrs (normalized in place)
+
+Normalize the Frequency-Drift-Rate (FDR) Matrix `fdr` or matrices `fdrs`
+in-place by subtracting the mean and dividing by the standard deviation.  The
+mean is calculated as the mean of the first column, i.e. along the frequency
+axis for the first drift rate of `fdr` or the first matrix of `fdrs`).  The
+standard deviation (aka sigma) value used is the minimum standard deviation of
+all columns of `fdr` or all columns of all matrices in `fdrs`.  The mean and
+standard deviation may also be given explicitly as `m` and `s`, respectively.
+"""
+function fdrnormalize!(fdr, m, s)
+    fdr .= (fdr .- m) ./ s
+    return fdr
+end
+
+function fdrnormalize!(fdr)
+    m, s = fdrstats(fdr)
+    return fdrnormalize!(fdr, m, s)
+end
+
+function fdrnormalize!(fdrs::AbstractVector, m, s)
     for fdr in fdrs
         fdr .= (fdr .- m) ./ s
     end
+    return fdrs
+end
+
+function fdrnormalize!(fdrs::AbstractVector)
+    m, s = fdrstats(fdrs)
+    return fdrnormalize!(fdrs, m, s)
 end
 
 """
