@@ -43,18 +43,13 @@ mutable struct ZDTWorkspace{T}
 
         F = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nt)
         Y = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nl)
-        # Any V locations that fall between vlow and vhigh are described as
-        # "don't care" values, but actually they are "don't care so long as they
-        # are not NaN" values, so we need to initialize them to non-NaN values.
-        # The easiest way to do that is to initialize all of V to zero.
-        V = zero(Y)
 
         Yf = @view Y[:, 1:Nt]
         Ys = @view Y[:, 1:Nr]
 
         ws = new{T}(
             Nf, Nt, r0, δr, Nr, Nl, factors,
-            F, Yf, Y, Ys, V
+            F, Yf, Y, Ys
         )
 
         # Call function to plan FFTs.  This allows for specialization based on
@@ -63,6 +58,13 @@ mutable struct ZDTWorkspace{T}
 
         # Initialize F with FFT of spectrogram
         input!(ws, spectrogram)
+
+        # Any V locations that fall between vlow and vhigh are described as
+        # "don't care" values, but actually they are "don't care so long as they
+        # are not NaN" values, so we need to initialize them to non-NaN values.
+        # The easiest way to do that is to initialize all of V to zero.
+        ws.V = zero(Y)
+
         # Precompute V
         computeV!(ws)
 
