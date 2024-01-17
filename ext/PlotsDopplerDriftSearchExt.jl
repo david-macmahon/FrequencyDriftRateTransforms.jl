@@ -3,9 +3,9 @@ module PlotsDopplerDriftSearchExt
 import DopplerDriftSearch: clusterheatmap, waterfall
 
 if isdefined(Base, :get_extension)
-    import Plots: heatmap, scatter!, plot!
+    import Plots: heatmap, scatter!, plot!, default
 else
-    import ..Plots: heatmap, scatter!, plot!
+    import ..Plots: heatmap, scatter!, plot!, default
 end
 
 """
@@ -96,8 +96,23 @@ The number of channels plotted is given by `nchans`.  If it is less than or
 equal to 0 (the default), the number of channels plotted will be determines such
 that the overlay line ends up as the first or last channel plotted, depending on
 its sign, or `2*ntime+1` if `rate≈0` where `ntime=size(ftmatrix,2)`.
+
+The `kwargs` are all passed on to `heatmap` except for `la`, 'lc', `ls`, 'lw',
+which are passed on to `plot!` when plotting the diagonal overlay line.  The
+long forms of the 4 kwargs passed to `plot!` are **not** similarly handled and
+will be passed to `heatmap`.
+
+- `la`: Line Alpha - 0 (transparent) to 1 (opaque)
+- `lc`: Line Color - standard Plots.jl color
+- `ls`: Line Style - standard Plots.jl line style options plus `:none`
+- `lw`: Line Width - pixels
+
+Passing `ls=:none` (not a valid Plots.jl option) will prevent the overlay line
+from being plotted.
 """
-function waterfall(ftmatrix, chan, rate, dfdt=1; nchans=0, kwargs...)
+function waterfall(ftmatrix, chan, rate, dfdt=1; nchans=0,
+                   lw=default(:lw), lc=:red, ls=default(:ls), la=default(:la),
+                   kwargs...)
     if nchans <= 0
         ntime = size(ftmatrix, 2)
         if rate ≈ 0
@@ -118,9 +133,11 @@ function waterfall(ftmatrix, chan, rate, dfdt=1; nchans=0, kwargs...)
         ylabel="Time Step",
         yflip=true, kwargs...
     )
-    plot!(p, evalpoly.(times.-1, Ref((chan, rate/dfdt))), times;
-        lc=:red, legend=false, widen=false, yflip=true, xlims=extrema(chans)
-    )
+    if ls != :none
+        plot!(p, evalpoly.(times.-1, Ref((chan, rate/dfdt))), times; lw, ls, la,
+            lc, legend=false, widen=false, yflip=true, xlims=extrema(chans)
+        )
+    end
     p
 end
 
