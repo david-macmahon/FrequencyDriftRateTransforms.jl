@@ -113,7 +113,7 @@ function waterfall(ftmatrix, chan, rate, dfdt=1; nchans=0, kwargs...)
         chans = range(chan-nchans÷2, length=nchans)
     end
     times = axes(ftmatrix, 2)
-    p = heatmap(chans, times, 10log10.((@view ftmatrix[chans, :])');
+    p = heatmap(chans, times, (@viewftmatrix[chans, :])';
         xlabel="Fine Channel",
         ylabel="Time Step",
         yflip=true, kwargs...
