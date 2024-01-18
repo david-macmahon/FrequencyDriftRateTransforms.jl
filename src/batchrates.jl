@@ -7,7 +7,9 @@ constructor).  In total, the `Range` instances span the given *NON-normalized*
 drift rates `r1` and `r2` (in `Hz/s`) in steps of `δhzps` (in `Hz/s`) for data
 with `Nt` time samples.  Often `δhzps` is calculated as `foff/tsamp/(Nt-1)`,
 where `foff` is the channel width in `Hz` and `tsamp` is the  interval between
-consecutive time samples in seconds.
+consecutive time samples in seconds.  Note that the returned drift rate range(s)
+will always go from low Hz/s to high Hz/s (even if `r1 > r2`) with a step size
+of `abs(δhzps)`.
 
 Each `Range` in the returned `Vector` has the same (normalized) step size and
 length that will be close(ish) to `Nrb`.  The number of drift rates per batch
