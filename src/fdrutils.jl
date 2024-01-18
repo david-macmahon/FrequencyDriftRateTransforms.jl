@@ -36,13 +36,13 @@ first matrix of `fdrs`).  The standard deviation (aka sigma) value used is the
 minimum standard deviation of all columns of `fdr` or all columns of all
 matrices in `fdrs`.
 """
-function fdrstats(fdr)
+function fdrstats(fdr::AbstractMatrix)
     m = mean(@view fdr[:,1])
     s = minimum(std(fdr, dims=1))
     (m, s)
 end
 
-function fdrstats(fdrs::AbstractVector)
+function fdrstats(fdrs)
     fdr1 = fdrs[1]
     m = mean(@view fdr1[:,1])
     s = minimum(minimum.(std.(fdrs, dims=1)))
@@ -67,24 +67,24 @@ function fdrnormalize(fdr::Number, m, s)
     return fdr
 end
 
-function fdrnormalize!(fdr, m, s)
+function fdrnormalize!(fdr::AbstractMatrix, m, s)
     fdr .= (fdr .- m) ./ s
     return fdr
 end
 
-function fdrnormalize!(fdr)
+function fdrnormalize!(fdr::AbstractMatrix)
     m, s = fdrstats(fdr)
     return fdrnormalize!(fdr, m, s)
 end
 
-function fdrnormalize!(fdrs::AbstractVector, m, s)
+function fdrnormalize!(fdrs, m, s)
     for fdr in fdrs
         fdr .= (fdr .- m) ./ s
     end
     return fdrs
 end
 
-function fdrnormalize!(fdrs::AbstractVector)
+function fdrnormalize!(fdrs)
     m, s = fdrstats(fdrs)
     return fdrnormalize!(fdrs, m, s)
 end
@@ -106,13 +106,13 @@ function fdrdenormalize(snr, m, s)
     return threshold
 end
 
-function fdrdenormalize(snr, fdr)
+function fdrdenormalize(snr, fdr::AbstractMatrix)
     m, s = fdrstats(fdr)
     threshold = fdrdenormalize(snr, m, s)
     return threshold
 end
 
-function fdrdenormalize(snr, fdrs::AbstractVector)
+function fdrdenormalize(snr, fdrs)
     m, s = fdrstats(fdrs)
     threshold = fdrdenormalize(snr, m, s)
     return threshold
@@ -127,4 +127,43 @@ are more specific than `AbstractArray` when they have synchroniztion
 requirements and mechanisms (e.g. `CuArray`).
 """
 function fdrsynchronize(::Type{<:AbstractArray})
+end
+
+"""
+    findprotohits(fdr::AbstractMatrix, threshold; snr=false) -> hijs
+    findprotohits(fdrs, threshold; snr=false) -> hijs
+
+Given a Frequency-Drift-Rate (FDR) matrix `fdr`, or an iterable of FDR matrices,
+find all points that are greater than or equal to `threshold`.  For a single FDR
+matrix, this is essentially a simple wrapper around `findall`.  When an iterable
+of FDR matrices is passed, they are treated as drift rate adjacent portions of a
+larger FDR Matrix (as if they had been `hcat`'d together).  If `snr` is true,
+the threshold is `denormalized` based on `fdr` or `fdrs` before the comparison.
+
+The resultant *proto-hits* are returned as `Vector{CartesianIndex}`, often
+referred to as `hijs` for "hit (i,j) coordinates".  The `hijs" at this stage are
+called proto-hits (as opposed to "real" hits) since no clustering of neighboring
+proto-hits has been performed.
+"""
+function findprotohits(fdr::AbstractMatrix, threshold; snr::Bool=false)
+    if snr
+        threshold = fdrdenormalize(threshold, fdr)
+    end
+
+    findall(>=(threshold), fdr)
+end
+
+function findprotohits(fdrs, threshold; snr::Bool=false)
+    if snr
+        threshold = fdrdenormalize(threshold, fdrs)
+    end
+
+    Nrb = size(first(fdrs), 2)
+    offset = CartesianIndex(0, Nrb)
+    hijs = CartesianIndex{2}[]
+    for (i, fdr) in enumerate(fdrs)
+        append!(hijs, findprotohits(fdr, threshold) .+ ((i-1)*offset))
+    end
+
+    return hijs
 end

@@ -38,12 +38,16 @@ Computing the FDR matrix with this package is just the just step of a Doppler
 drift search.  The next step is finding the points in the FDR matrix that have
 values greater a certain threshold.  Usually the threshold is given as a
 *signal-to-noise ratio* (SNR), which is essentially a number of standard
-deviations above the mean of the FDR values.  The FDR values can be normalized
-by subtracting the mean and dividing by the standard deviation so that they can
-be compared directly to the SNR value, but it is much more efficient to
-denormalize the single SNR threshold by multiplying it by the standard deviation
-and adding the mean.  The denormalized SNR value can then be used as the
-threshold with the non-normalized FDR values.
+deviations above the mean of the FDR values.  The `findprotohits` function can
+be used to find such points.  FDR values can be normalized via the
+`fdrnormalize!` function which subtracts the mean and divides by the standard
+deviation.  This can be useful for plotting so that the displayed values are SNR
+values, but for searching it is much more efficient to denormalize the single
+SNR threshold via the `fdrdenormalize` function, shich multiplies the SNR value
+by the standard deviation of the FDR and adding the mean of the SDR.  The
+denormalized SNR value can then be used as the threshold with the non-normalized
+FDR values.  This latter approach can also be performed as part of
+`findprotohits` by passing `snr=true` as a keyword argument.
 
 Elements of the FDR matrix with a value greater than a specified threshold form
 a set of *proto-hits*.  Each proto-hit is not a detection of a unique Doppler
@@ -54,8 +58,8 @@ represent a unique Doppler drifting signal.
 
 ## Additional/related packages
 
-* As the name suggests, the DopplerDriftSearchTools.jl package contains a
-  variety tools that are useful for performing Doppler drift searches:
+* DopplerDriftSearchTools.jl: As the name suggests, this package contains a
+  variety of tools that are useful for performing Doppler drift searches:
 
   - Detection of unique signals, often referred to as *hits*, within the
     proto-hits found in an FDR matrix (or via other means).
@@ -65,7 +69,7 @@ represent a unique Doppler drifting signal.
   - The ability to read turboSETI `.dat` files
   - Find matches and non-matches between sets of hits
 
-* The DopplerDriftSearchPipleine.jl package combines
+* DopplerDriftSearchPipleine.jl: This package combines
   FrequencyDriftRateTransforms.jl and DopplerDriftSearchTools.jl with
   PoolQueues.jl to create a highly parallelized ZDT-based pipeline for
   performing a Doppler drift searches on a collection of input files.
@@ -77,7 +81,7 @@ creating a *frequency drift rate* (FDR) matrix from a spectrogram matrix for a
 given set of drift rates.  The FDR matrix may be plotted using, for example, the
 `heatmap` function from Plots.jl.  Such a plot is often called a *butterfly
 plot* because Doppler drifting narrow band signals are associated with
-characteristic structure in the plot resembling a butterfly. 
+characteristic structure in the plot resembling a butterfly.
 
 Three different techniques for generating FDR matrices are supported:
 
@@ -100,14 +104,12 @@ Chirp-Z De-Doppler Transform (ZDT).
 The Chirp-Z De-Doppler Transform (ZDT) computes the FDR matrix en masse using
 an input FFT, a Chirp-Z transform, and an output FFT.  The Chirp-Z transform
 itself is implemented with a series of phase factor multiplications and FFTs.
-The ZDT algorithm of this package can be used on a CPU or a GPU.  In fact, the
-vast majority of the code is directly usable on either the CPU or GPU.  The only
-differences are in the FFT planning stage and in the output FFT stage where
-things are done differently to minimize memory usage on the GPU.  It must be
-emphasized that these differences are elective for memory footprint
-optimizations.  The CPU code and GPU code are essentially the same code; there
-are not separate kernels for CPU vs GPU.
+The ZDT algorithm of this package can be used on a CPU or a GPU.  It must be
+emphasized that the CPU code and GPU code are the same code; there are not
+separate kernels for CPU vs GPU.  The ability to run the same code on CPU or GPU
+is one of the many amazing features of Julia and CUDA.jl!
 
 The ZDT can compute an FDR matrix spanning many drift rates in smaller pieces,
 which can be very useful when working on a memory constrained device like a
-GPU.
+GPU.  The ZDT imposes one constraint: it must be used with evenly spaced drift
+rates.  This is rarely a problem in practice.

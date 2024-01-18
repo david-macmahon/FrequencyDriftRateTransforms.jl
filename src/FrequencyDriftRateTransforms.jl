@@ -2,7 +2,7 @@ module FrequencyDriftRateTransforms
 
 # fdrutils.jl
 export create_fdr, fdrstats, fdrsynchronize
-export fdrnormalize!, fdrnormalize, fdrdenormalize
+export fdrnormalize!, fdrnormalize, fdrdenormalize, findprotohits
 
 # intfdr.jl
 export intshift, intshift!
