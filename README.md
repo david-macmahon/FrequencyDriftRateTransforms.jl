@@ -34,7 +34,7 @@ application of the Chirp-Z Transform to perform the transformation from
 spectrogram to FDR matrix.  This approach is referred to as the *Chirp-Z
 De-Doppler Transform*, or just *ZDT* for short.
 
-Computing the FDR matrix with this package is just the just step of a Doppler
+Computing the FDR matrix with this package is just the first step of a Doppler
 drift search.  The next step is finding the points in the FDR matrix that have
 values greater a certain threshold.  Usually the threshold is given as a
 *signal-to-noise ratio* (SNR), which is essentially a number of standard
@@ -44,7 +44,7 @@ be used to find such points.  FDR values can be normalized via the
 deviation.  This can be useful for plotting so that the displayed values are SNR
 values, but for searching it is much more efficient to denormalize the single
 SNR threshold via the `fdrdenormalize` function, shich multiplies the SNR value
-by the standard deviation of the FDR and adding the mean of the SDR.  The
+by the standard deviation of the FDR and then adds the mean of the SDR.  The
 denormalized SNR value can then be used as the threshold with the non-normalized
 FDR values.  This latter approach can also be performed as part of
 `findprotohits` by passing `snr=true` as a keyword argument.
