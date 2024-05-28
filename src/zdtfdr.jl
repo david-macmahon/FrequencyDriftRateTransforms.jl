@@ -24,11 +24,11 @@ mutable struct ZDTWorkspace{T}
 
     # Input/output FFT plans
     rfft_plan::AbstractFFTs.Plan
-    brfft_plan::AbstractFFTs.Plan
+    irfft_plan::AbstractFFTs.Plan
 
     # CZT FFT plans (in-place)
     fft_plan::AbstractFFTs.Plan
-    bfft_plan::AbstractFFTs.Plan
+    ifft_plan::AbstractFFTs.Plan
 
     # Some specializations (e.g. for CUDA) need to allocate a work area for
     # FFTs, which can be stored here.
@@ -114,13 +114,13 @@ function plan_ffts!(workspace::ZDTWorkspace,
     Nf = workspace.Nf
     Y = workspace.Y
     Ys = workspace.Ys
-    brfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
+    irfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
 
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
-    workspace.brfft_plan = plan_brfft(Ys, Nf, 1; flags=brfft_flags)
+    workspace.irfft_plan = plan_irfft(Ys, Nf, 1; flags=irfft_flags)
 
     workspace.fft_plan = plan_fft!(Y, 2)
-    workspace.bfft_plan = plan_bfft!(Y, 2)
+    workspace.ifft_plan = plan_ifft!(Y, 2)
 
     workspace.fft_workarea = nothing
 
@@ -249,7 +249,7 @@ Perform CZT convolution step for data in `workspace` by doing:
 function convolve!(workspace)
     mul!(workspace.Y, workspace.fft_plan, workspace.Y)
     workspace.Y .*= workspace.V
-    mul!(workspace.Y, workspace.bfft_plan, workspace.Y)
+    mul!(workspace.Y, workspace.ifft_plan, workspace.Y)
 end
 
 """
@@ -285,7 +285,7 @@ Output ZDT results into `dest`, which should have size `(Nf, Nr)`.
 """
 function output!(dest, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
-    mul!(dest, workspace.brfft_plan, workspace.Ys)
+    mul!(dest, workspace.irfft_plan, workspace.Ys)
 end
 
 """
