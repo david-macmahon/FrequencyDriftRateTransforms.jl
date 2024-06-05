@@ -6,14 +6,14 @@ import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, output!,
 if isdefined(Base, :get_extension)
     import FFTW
     using CUDA: CuArray, CuMatrix, synchronize
-    using CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
+    using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
     import ..FFTW
     import ..CUDA: CuArray, CuMatrix, synchronize
-    using ..CUDA.CUFFT: plan_fft!, plan_bfft!, plan_rfft, plan_brfft
+    using ..CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                          update_stream, cufftExecC2R
@@ -66,14 +66,17 @@ function plan_ffts!(workspace::ZDTWorkspace,
     cufftSetWorkArea(workspace.fft_plan, workspace.fft_workarea)
 
     # Backward FFT of Y
-    workspace.bfft_plan = plan_bfft!(Y, 2)
-    cufftSetWorkArea(workspace.bfft_plan, workspace.fft_workarea)
+    workspace.ifft_plan = plan_ifft!(Y, 2)
+    # workspace.ifft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
+    # CUDA 5.4.2 does not properly convert the ScaledPlan to a cufftHandle, so
+    # we set the workarea on the contained CuFFTPlan directly.
+    cufftSetWorkArea(workspace.ifft_plan.p, workspace.fft_workarea)
 
     # Forward real FFT for input to F
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
 
     # Backward real FFT for output from Ys
-    workspace.brfft_plan = plan_brfft(Ys, Nf, 1)
+    workspace.irfft_plan = plan_irfft(Ys, Nf, 1)
 
     return nothing
 end
@@ -90,8 +93,11 @@ ZDT operation.
 """
 function output!(dest::CuMatrix{<:Real}, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
-    update_stream(workspace.brfft_plan)
-    cufftExecC2R(workspace.brfft_plan, workspace.Ys, dest)
+    # workspace.irfft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
+    # CUDA 5.4.2 does not properly convert the ScaledPlan to a cufftHandle, so
+    # we operate on the contained CuFFTPlan directly.
+    update_stream(workspace.irfft_plan.p)
+    cufftExecC2R(workspace.irfft_plan.p, workspace.Ys, dest)
     return dest
 end
 
