@@ -26,8 +26,8 @@ The value of each element of the matrix is the total power that was summed up
 (integrated) along the drift line corresponding to the element's starting
 frequency and drift rate.
 
-This package transforms spectrograms to frequency drift rate matrices for a
-given set of drift rates.  The brute force approach is not very efficient, but
+This package transforms spectrograms to frequency drift rate (FDR) matrices for
+a given set of drift rates.  The brute force approach is not very efficient, but
 techniques such as the Taylor Tree algorithm minimize (if not eliminate)
 redundant calculations and can be quite efficient.  This package uses a novel
 application of the Chirp-Z Transform to perform the transformation from
@@ -43,7 +43,7 @@ be used to find such points.  FDR values can be normalized via the
 `fdrnormalize!` function which subtracts the mean and divides by the standard
 deviation.  This can be useful for plotting so that the displayed values are SNR
 values, but for searching it is much more efficient to denormalize the single
-SNR threshold via the `fdrdenormalize` function, shich multiplies the SNR value
+SNR threshold via the `fdrdenormalize` function, which multiplies the SNR value
 by the standard deviation of the FDR and then adds the mean of the SDR.  The
 denormalized SNR value can then be used as the threshold with the non-normalized
 FDR values.  This latter approach can also be performed as part of
