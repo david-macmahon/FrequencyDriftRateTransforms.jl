@@ -1,7 +1,3 @@
-!!! warning "Under Construction"
-
-    This document is under construction.
-
 # FrequencyDriftRateTransforms.jl
 
 This package is part of a suite of packages that can be used in tandem to search
