@@ -25,7 +25,7 @@ using `fftfdr`.  One of these intermediate buffers is an `AbstractMatrix` that
 holds the FFT of `spectrogram` along the frequency dimension.  This FFT is
 performed as part of creating the workspace.  The first (fastest changing)
 dimension of `spectrogram` is frequency and the second dimension (slowest
-changing) is time. 
+changing) is time.
 
 By default, the spectra in columns of `spectrogram` have no alignment
 constraints, but if the columns of `fftfdr`'s output buffer will be suitably
@@ -42,17 +42,17 @@ function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     dest_phasor = similar(dest_rfft)
     dest_sum = similar(dest_rfft, Nf÷2+1)
     fplan = plan_rfft(spectrogram, 1)
-    bplan1d = plan_brfft(dest_sum, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
+    bplan1d = plan_irfft(dest_sum, Nf; flags=FFTW.ESTIMATE|(bunaligned ? FFTW.UNALIGNED : 0))
     # The `2d` in `bplan2d` refers to the input/output arrays.
     # The dimensionality of the FFT is still 1D along the first dimension.
-    bplan2d = plan_brfft(dest_rfft, Nf, 1) # Assume unaligned output for now
+    bplan2d = plan_irfft(dest_rfft, Nf, 1) # Assume unaligned output for now
     mul!(dest_rfft, fplan, spectrogram)
     (
         Nf=Nf,
-        dest_rfft=dest_rfft, 
-        dest_phasor=dest_phasor, 
-        dest_sum=dest_sum, 
-        fplan=fplan, 
+        dest_rfft=dest_rfft,
+        dest_phasor=dest_phasor,
+        dest_sum=dest_sum,
+        fplan=fplan,
         bplan1d=bplan1d,
         bplan2d=bplan2d
     )
