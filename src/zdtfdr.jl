@@ -253,29 +253,71 @@ function convolve!(workspace)
 end
 
 """
-    postphase(k::Integer, l::Integer, δr::Float32, Nf::Integer) -> ComplexF32
-    postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
+    postphase([w,] k::Integer, l::Integer, δr::Float32, Nf::Integer) -> ComplexF32
+    postphase([w,] kl::CartesianIndex, δr::Float32, Nf::Integer)
 
 Generate phase factors used in the *post-multiply* step of the CZT.  `k` and `l`
 are zero-based offsets.  `kl` is a one-based `CartesianIndex`.
+
+`w` specifies the windowing function to apply prior to the final output inverse
+FFT.  It may be given as `:rect` to use a rectangular window (the default),
+`:hamming` to use a Hamming window, or a two-arg function that will be passed
+the zero-indexed channel number and the total number of channels and should
+return the window value for that channel number.
 """
+function postphase(w::Function, k::Integer, l::Integer, δr::Float32, Nf::Integer)
+    cispi(k * l * l * δr / Nf) * w(k,Nf)
+end
+
 function postphase(k::Integer, l::Integer, δr::Float32, Nf::Integer)
-    cispi(k * l * l * δr / Nf)
+    postphase((n,N)->1, k, l, δr, Nf) # Default to rectangular window
+end
+
+# postphase CartesianIndex methods
+
+function postphase(w::Function, kl::CartesianIndex, δr::Float32, Nf::Integer)
+    postphase(w, kl[1]-1, kl[2]-1, δr, Nf)
 end
 
 function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
-    postphase(kl[1]-1, kl[2]-1, δr, Nf)
+    postphase((n,N)->1, kl, δr, Nf, w) # Default to rectangular window
 end
 
 """
-    postprocess!(workspace)
+    postprocess!([w,] workspace)
 
 Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
+
+`w` specifies the windowing function to apply prior to the final output inverse
+FFT.  It may be given as `:rect` to use a rectangular window (the default),
+`:hamming` to use a Hamming window, or a two-arg function that will be passed
+the zero-indexed channel number and the total number of channels and should
+return the window value for that channel number.
 """
-function postprocess!(workspace)
+function postprocess!(w::Function, workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
-    workspace.Ys .*= postphase.(CartesianIndices(workspace.Ys),
+    workspace.Ys .*= postphase.(w, CartesianIndices(workspace.Ys),
                                 workspace.δr, workspace.Nf)
+end
+
+function postprocess!(::Val{:hamming}, workspace)
+    postprocess!((n,N)->(0.53836 + 0.46164 * cospi(2n/N)), workspace)
+end
+
+function postprocess!(::Val{:rect}, workspace)
+    postprocess!((n,N)->1, workspace)
+end
+
+function postprocess!(::Val{S}, workspace) where S
+    error("unsupported window type ($S)")
+end
+
+function postprocess!(w::Symbol, workspace)
+    postprocess!(Val(w), workspace)
+end
+
+function postprocess!(workspace)
+    postprocess!(Val(:rect), workspace)
 end
 
 """
@@ -297,8 +339,14 @@ drift rate matrix into `dest` and return `dest`, otherwise return `nothing`.  An
 alternate `r0` may be given to override `workspace.r0`.  `dest` and `r0` may
 also be iterators to compute multiple ZDTs from the same input for different r0
 values.
+
+`w` specifies the windowing function to apply prior to the final output inverse
+FFT.  It may be given as `:rect` to use a rectangular window (the default),
+`:hamming` to use a Hamming window, or a two-arg function that will be passed
+the zero-indexed channel number and the total number of channels and should
+return the window value for that channel number.
 """
-function zdtfdr!(dests, workspace, spectrogram=nothing; r0=workspace.r0)
+function zdtfdr!(w::Union{Function,Symbol,Val}, dests, workspace, spectrogram=nothing; r0=workspace.r0)
     if spectrogram !== nothing
         input!(workspace, spectrogram)
     end
@@ -306,41 +354,67 @@ function zdtfdr!(dests, workspace, spectrogram=nothing; r0=workspace.r0)
     for (dest, rate) in zip(dests, Iterators.cycle(r0))
         preprocess!(workspace, rate)
         convolve!(workspace)
-        postprocess!(workspace)
+        postprocess!(w, workspace)
         output!(dest, workspace)
     end
 
     return dests
 end
 
-function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
-    zdtfdr!((dest,), workspace, spectrogram; r0)
+function zdtfdr!(dests, workspace, spectrogram=nothing; r0=workspace.r0)
+    zdtfdr!(Val(:rect), dests, workspace, spectrogram; r0)
+end
+
+# dest as standalone Matrix
+
+function zdtfdr!(w::Union{Function,Symbol,Val}, dest::AbstractMatrix{<:Real}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
+    zdtfdr!(w, (dest,), workspace, spectrogram; r0)
     return dest
 end
 
-function zdtfdr!(workspace::ZDTWorkspace, spectrogram=nothing; r0::Real=workspace.r0)
+function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
+    zdtfdr!(Val(:rect), (dest,), workspace, spectrogram; r0)
+end
+
+# No dest
+
+function zdtfdr!(w::Union{Function,Symbol,Val}, workspace::ZDTWorkspace, spectrogram=nothing; r0::Real=workspace.r0)
     if spectrogram !== nothing
         input!(workspace, spectrogram)
     end
 
     preprocess!(workspace, r0)
     convolve!(workspace)
-    postprocess!(workspace)
+    postprocess!(w, workspace)
 
     return nothing
 end
 
+function zdtfdr!(workspace::ZDTWorkspace, spectrogram=nothing; r0::Real=workspace.r0)
+    zdtfdr!(Val(:rect), workspace::ZDTWorkspace, spectrogram; r0)
+end
+
 """
-    zdtfdr(workspace[, spectrogram]; r0=workspace.r0)
+    zdtfdr([w,] workspace[, spectrogram]; r0=workspace.r0)
 
 If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
 algorithm as specified in `workspace`, `output!` frequency drift rate matrix to
 a newly allocated `Matrix` and return it.  An alternate `r0` may be given to
 override `workspace.r0`.
+
+`w` specifies the windowing function to apply prior to the final output inverse
+FFT.  It may be given as `:rect` to use a rectangular window (the default),
+`:hamming` to use a Hamming window, or a two-arg function that will be passed
+the zero-indexed channel number and the total number of channels and should
+return the window value for that channel number.
 """
-function zdtfdr(workspace, spectrogram=nothing; r0::Real=workspace.r0)
+function zdtfdr(w::Union{Function,Symbol,Val}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
     Nf = workspace.Nf
     Nr = workspace.Nr
     dest = similar(workspace.Ys, real(eltype(workspace.Ys)), Nf, Nr)
-    zdtfdr!(dest, workspace, spectrogram; r0=r0)
+    zdtfdr!(w, dest, workspace, spectrogram; r0=r0)
+end
+
+function zdtfdr(workspace, spectrogram=nothing; r0::Real=workspace.r0)
+    zdtfdr(Val(:rect), workspace, spectrogram; r0)
 end
