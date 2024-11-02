@@ -98,6 +98,7 @@ function output!(dest::CuMatrix{<:Real}, workspace)
     # we operate on the contained CuFFTPlan directly.
     update_stream(workspace.irfft_plan.p)
     cufftExecC2R(workspace.irfft_plan.p, workspace.Ys, dest)
+    dest .*= workspace.irfft_plan.scale
     return dest
 end
 
