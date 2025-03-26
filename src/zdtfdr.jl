@@ -374,6 +374,7 @@ end
 
 function zdtfdr!(dest::AbstractMatrix{<:Real}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
     zdtfdr!(Val(:rect), (dest,), workspace, spectrogram; r0)
+    return dest
 end
 
 # No dest
