@@ -280,7 +280,7 @@ function postphase(w::Function, kl::CartesianIndex, δr::Float32, Nf::Integer)
 end
 
 function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
-    postphase((n,N)->1, kl, δr, Nf, w) # Default to rectangular window
+    postphase((n,N)->1, kl, δr, Nf) # Default to rectangular window
 end
 
 """
