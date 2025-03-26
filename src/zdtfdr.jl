@@ -331,7 +331,7 @@ function output!(dest, workspace)
 end
 
 """
-    zdtfdr!([dest,] workspace[, spectrogram]; r0=workspace.r0)
+    zdtfdr!([w,] [dest,] workspace[, spectrogram]; r0=workspace.r0)
 
 If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
 algorithm as specified in `workspace`.  If `dest` is given, `output!` frequency
