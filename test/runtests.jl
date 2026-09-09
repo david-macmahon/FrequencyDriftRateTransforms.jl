@@ -22,20 +22,20 @@ using Test
 
     @testset "fftfdr" begin
         fftws = fftfdr_workspace(d)
-        @test fdshift(fftws, 1) ./ 3 ≈ dshift1_expected 
-        @test fftfdr(fftws, -1:1) ./ 3 ≈ fdr_expected
+        @test fdshift(fftws, 1) ≈ dshift1_expected 
+        @test fftfdr(fftws, -1:1) ≈ fdr_expected
     end
 
     @testset "zdtfdr [FFTW]" begin
         zdtws = ZDTWorkspace(d, -1:1)
-        @test zdtfdr(zdtws) ./ 12 ≈ fdr_expected
+        @test zdtfdr(zdtws) ≈ fdr_expected
     end
 
     if isdefined(Main, :CUDA)
         @testset "zdtfdr [CUDA]" begin
             g = CuArray(d)
             gdtws = ZDTWorkspace(g, -1:1)
-            @test Array(zdtfdr(gdtws)) ./ 12 ≈ fdr_expected
+            @test Array(zdtfdr(gdtws)) ≈ fdr_expected
         end
     end
 
