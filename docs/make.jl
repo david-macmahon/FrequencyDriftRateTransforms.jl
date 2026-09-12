@@ -2,10 +2,10 @@ using Documenter
 using FrequencyDriftRateTransforms
 
 makedocs(
-    sitename = "FrequencyDriftRateTransforms", # Add ".jl"?
+    sitename = "FrequencyDriftRateTransforms.jl",
     format = Documenter.HTML(),
     modules = [FrequencyDriftRateTransforms],
-    remotes = nothing,
+    repo = Documenter.Remotes.GitHub("david-macmahon", "FrequencyDriftRateTransforms.jl"),
     pages = [
         "Contents" => "index.md",
         "API" => "api.md",
@@ -13,9 +13,8 @@ makedocs(
     ]
 )
 
-# Documenter can also automatically deploy documentation to gh-pages.
-# See "Hosting Documentation" and deploydocs() in the Documenter manual
-# for more information.
-#=deploydocs(
-    repo = "<repository url>"
-)=#
+deploydocs(
+    repo = "github.com/david-macmahon/FrequencyDriftRateTransforms.jl.git",
+    devbranch = "main",
+    push_preview = true,
+)
