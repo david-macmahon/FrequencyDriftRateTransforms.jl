@@ -1,5 +1,6 @@
 # FrequencyDriftRateTransforms.jl
 
+[![Test](https://github.com/david-macmahon/FrequencyDriftRateTransforms.jl/actions/workflows/Test.yml/badge.svg)](https://github.com/david-macmahon/FrequencyDriftRateTransforms.jl/actions/workflows/Test.yml)
 [![Documentation](https://github.com/david-macmahon/FrequencyDriftRateTransforms.jl/actions/workflows/Documentation.yml/badge.svg)](https://github.com/david-macmahon/FrequencyDriftRateTransforms.jl/actions/workflows/Documentation.yml)
 [![docs stable](https://img.shields.io/badge/docs-stable-8CA0B3.svg)](https://david-macmahon.github.io/FrequencyDriftRateTransforms.jl/stable/)
 

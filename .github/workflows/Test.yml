@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1.8"
+          - "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+
+      - name: Cache Julia artifacts
+        uses: julia-actions/cache@v1
+
+      - name: Build package
+        uses: julia-actions/julia-buildpkg@v1
+
+      - name: Run tests
+        uses: julia-actions/julia-runtest@v1
