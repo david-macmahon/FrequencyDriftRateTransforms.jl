@@ -68,7 +68,7 @@ argument is ignored unless `workspace` is `nothing`.
 """
 function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
-    if size(workspace.dest_rfft) !== (Nf÷2+1, Nt)
+    if size(workspace.dest_rfft) != (Nf÷2+1, Nt)
         error("input spectrogram has unexpected size")
     end
     if eltype(workspace.dest_rfft) !== complex(eltype(spectrogram))

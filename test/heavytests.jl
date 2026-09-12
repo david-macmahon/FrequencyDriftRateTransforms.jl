@@ -25,7 +25,7 @@ rates = 0:-0.25:-5
     pkval, pkidx = findmax(ffdr)
     @test pkidx == CartesianIndex(55, 11)
 
-    # De-dopper spectrogram with known drift rate
+    # De-doppler spectrogram with known drift rate
     dedop = fdshift(fftws, -2.43)
     # Find maximum value for each time sample
     peaks = maximum(dedop, dims=1)

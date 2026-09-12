@@ -1,6 +1,12 @@
 using FrequencyDriftRateTransforms
 using Test
 
+if dirname(something(Base.current_project(), "")) == @__DIR__
+    using CUDA
+else
+    @info "Skipping CUDA tests: not running in the test environment (use Pkg.test())"
+end
+
 @testset verbose=true "simple tests" begin
     d = zeros(Float32, 3, 2)
     d[2,:] .= 1
@@ -32,11 +38,25 @@ using Test
     end
 
     if isdefined(Main, :CUDA)
-        @testset "zdtfdr [CUDA]" begin
-            g = CuArray(d)
-            gdtws = ZDTWorkspace(g, -1:1)
-            @test Array(zdtfdr(gdtws)) ≈ fdr_expected
+        if CUDA.functional()
+            @testset "zdtfdr [CUDA]" begin
+                g = CuArray(d)
+                gdtws = ZDTWorkspace(g, -1:1)
+                @test Array(zdtfdr(gdtws)) ≈ fdr_expected
+            end
+        else
+            @info "Skipping CUDA tests: no functional GPU available"
         end
     end
 
 end;
+
+if get(ENV, "FDR_HEAVY_TESTS", "0") == "1"
+    @testset "heavy tests" begin
+        include("heavytests.jl")
+    end
+else
+    @info "Skipping heavy tests (set FDR_HEAVY_TESTS=1 to enable; downloads data)"
+end
+
+# end of runtests.jl

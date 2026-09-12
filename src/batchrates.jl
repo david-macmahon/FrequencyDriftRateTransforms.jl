@@ -54,7 +54,7 @@ function batchrates(Nt::Integer, δhzps, r1, r2=-r1; Nrb=360)
     rs = range(nc1//(Nt-1), stop=nc2//(Nt-1), length=Nr)
     #@show rs
     @assert length(rs) % Nrb == 0 "number of rates ($(
-                                   length(rs)) is not divisible by Nrb ($Nrb)"
+                                   length(rs))) is not divisible by Nrb ($Nrb)"
 
     collect(Iterators.partition(rs, Nrb))
 end
