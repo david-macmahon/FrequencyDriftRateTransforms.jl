@@ -53,7 +53,7 @@ function estimate_memory(Nf, Nt, Nr, Ni=1, No=1;
 end
 
 """
-    driftrates(zdtws::ZDTWorkspace; r0=zdtws.r0) -> Range
+    driftrates(zdtws::ZDTWorkspace, r0=zdtws.r0) -> Range
 
 Return the Range of normalized drift rates that `zdtws` has been configured to
 use.  An alternate *normalized* `r0` value may be given to override

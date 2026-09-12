@@ -16,7 +16,7 @@ function phasor(ij::CartesianIndex, r, N)
 end
 
 """
-    fftfdr_workspace(specrogram[; bunaligned=true]) -> workspace
+    fftfdr_workspace(spectrogram[; bunaligned=true]) -> workspace
 
 Create a *workspace* suitable for use with `fdshift!` and `fftfdr!`.  The
 workspace includes all the required intermediate storage buffers and FFT plan
@@ -29,7 +29,7 @@ changing) is time.
 
 By default, the spectra in columns of `spectrogram` have no alignment
 constraints, but if the columns of `fftfdr`'s output buffer will be suitably
-aligned for the FFT implementation, then `bunalingned` may be passed as `false`.
+aligned for the FFT implementation, then `bunaligned` may be passed as `false`.
 This will usually be the case if the number of frequency channels has several
 factors of 2, but it depends on the specifics of the FFT implementation.
 
@@ -59,7 +59,7 @@ function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
 end
 
 """
-    fftfdr_workspace!(workspace, specrogram) -> workspace
+    fftfdr_workspace!(workspace, spectrogram) -> workspace
 
 Reinitialize `workspace` buffers using `spectrogram`.  An exception is thrown if
 `spectrogram` is type and/or size incompatible with `workspace`.  If `workspace`

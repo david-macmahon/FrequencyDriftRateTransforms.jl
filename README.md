@@ -40,7 +40,7 @@ be used to find such points.  FDR values can be normalized via the
 deviation.  This can be useful for plotting so that the displayed values are SNR
 values, but for searching it is much more efficient to denormalize the single
 SNR threshold via the `fdrdenormalize` function, which multiplies the SNR value
-by the standard deviation of the FDR and then adds the mean of the SDR.  The
+by the standard deviation of the FDR and then adds the mean of the FDR.  The
 denormalized SNR value can then be used as the threshold with the non-normalized
 FDR values.  This latter approach can also be performed as part of
 `findprotohits` by passing `snr=true` as a keyword argument.
@@ -65,7 +65,7 @@ represent a unique Doppler drifting signal.
   - The ability to read turboSETI `.dat` files
   - Find matches and non-matches between sets of hits
 
-* DopplerDriftSearchPipleine.jl: This package combines
+* DopplerDriftSearchPipeline.jl: This package combines
   FrequencyDriftRateTransforms.jl and DopplerDriftSearchTools.jl with
   PoolQueues.jl to create a highly parallelized ZDT-based pipeline for
   performing a Doppler drift searches on a collection of input files.

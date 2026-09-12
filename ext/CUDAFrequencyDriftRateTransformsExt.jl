@@ -21,7 +21,8 @@ end
 
 """
     fdrsynchronize(::Type{<:CuArray})
-CUDA-specific implementaion of this function that calls CUDA's synchronize()`.
+
+CUDA-specific implementation of this function that calls CUDA's synchronize()`.
 """
 function fdrsynchronize(::Type{<:CuArray})
     synchronize()
@@ -68,8 +69,8 @@ function plan_ffts!(workspace::ZDTWorkspace,
     # Backward FFT of Y
     workspace.ifft_plan = plan_ifft!(Y, 2)
     # workspace.ifft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
-    # CUDA 5.4.2 does not properly convert the ScaledPlan to a cufftHandle, so
-    # we set the workarea on the contained CuFFTPlan directly.
+    # CUDA 5.4.2 and earlier do not properly convert the ScaledPlan to a
+    # cufftHandle, so we set the workarea on the contained CuFFTPlan directly.
     cufftSetWorkArea(workspace.ifft_plan.p, workspace.fft_workarea)
 
     # Forward real FFT for input to F
@@ -94,8 +95,8 @@ ZDT operation.
 function output!(dest::CuMatrix{<:Real}, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
     # workspace.irfft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
-    # CUDA 5.4.2 does not properly convert the ScaledPlan to a cufftHandle, so
-    # we operate on the contained CuFFTPlan directly.
+    # CUDA 5.4.2 and earlier do not properly convert the ScaledPlan to a
+    # cufftHandle, so we operate on the contained CuFFTPlan directly.
     update_stream(workspace.irfft_plan.p)
     cufftExecC2R(workspace.irfft_plan.p, workspace.Ys, dest)
     dest .*= workspace.irfft_plan.scale

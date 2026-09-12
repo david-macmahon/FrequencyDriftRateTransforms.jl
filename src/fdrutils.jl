@@ -121,9 +121,9 @@ end
 """
     fdrsynchronize(::Type{<:AbstractArray})
 
-The default implementaion of this function does nothing, but it should be called
+The default implementation of this function does nothing, but it should be called
 whenever synchronization might be needed.  Methods can be defined for types that
-are more specific than `AbstractArray` when they have synchroniztion
+are more specific than `AbstractArray` when they have synchronization
 requirements and mechanisms (e.g. `CuArray`).
 """
 function fdrsynchronize(::Type{<:AbstractArray})

@@ -261,9 +261,19 @@ are zero-based offsets.  `kl` is a one-based `CartesianIndex`.
 
 `w` specifies the windowing function to apply prior to the final output inverse
 FFT.  It may be given as `:rect` to use a rectangular window (the default),
-`:hamming` to use a Hamming window, or a two-arg function that will be passed
-the zero-indexed channel number and the total number of channels and should
-return the window value for that channel number.
+`:hamming` to use a Hamming smoothing window, or a two-arg function that will be
+passed the zero-indexed channel number and the total number of channels and
+should return the window value for that channel number.
+
+# Extended help
+
+To implement a desired kernel, supply its forward FFT as the window, centered
+at channel 0; e.g. the window `a + b*cospi(2n/N)` with `a + b = 1` yields the
+3-point smoothing kernel `[b/2, a, b/2]`.  (Real, even-symmetric windows
+produce real, symmetric kernels.)  NB: for smoothing, the peak should be at
+channel 0 rather than N/2 because the data are in FFT order.  The `:hamming`
+window uses `a = 0.53836` and `b = 0.46164` to provide the classic 3-point
+kernel `[0.23082, 0.53836, 0.23082]`.
 """
 function postphase(w::Function, k::Integer, l::Integer, δr::Float32, Nf::Integer)
     cispi(k * l * l * δr / Nf) * w(k,Nf)
@@ -290,9 +300,10 @@ Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 
 `w` specifies the windowing function to apply prior to the final output inverse
 FFT.  It may be given as `:rect` to use a rectangular window (the default),
-`:hamming` to use a Hamming window, or a two-arg function that will be passed
-the zero-indexed channel number and the total number of channels and should
-return the window value for that channel number.
+`:hamming` to use a Hamming smoothing window, or a two-arg function that will be
+passed the zero-indexed channel number and the total number of channels and
+should return the window value for that channel number.  For details about the
+window function, see the extended help of [`postphase`](@ref).
 """
 function postprocess!(w::Function, workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
@@ -342,9 +353,10 @@ values.
 
 `w` specifies the windowing function to apply prior to the final output inverse
 FFT.  It may be given as `:rect` to use a rectangular window (the default),
-`:hamming` to use a Hamming window, or a two-arg function that will be passed
-the zero-indexed channel number and the total number of channels and should
-return the window value for that channel number.
+`:hamming` to use a Hamming smoothing window, or a two-arg function that will be
+passed the zero-indexed channel number and the total number of channels and
+should return the window value for that channel number.  For details about the
+window function, see the extended help of [`postphase`](@ref).
 """
 function zdtfdr!(w::Union{Function,Symbol,Val}, dests, workspace, spectrogram=nothing; r0=workspace.r0)
     if spectrogram !== nothing
@@ -405,9 +417,10 @@ override `workspace.r0`.
 
 `w` specifies the windowing function to apply prior to the final output inverse
 FFT.  It may be given as `:rect` to use a rectangular window (the default),
-`:hamming` to use a Hamming window, or a two-arg function that will be passed
-the zero-indexed channel number and the total number of channels and should
-return the window value for that channel number.
+`:hamming` to use a Hamming smoothing window, or a two-arg function that will be
+passed the zero-indexed channel number and the total number of channels and
+should return the window value for that channel number.  For details about the
+window function, see the extended help of [`postphase`](@ref).
 """
 function zdtfdr(w::Union{Function,Symbol,Val}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
     Nf = workspace.Nf
