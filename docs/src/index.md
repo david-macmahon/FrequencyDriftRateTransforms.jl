@@ -25,10 +25,10 @@ frequency and drift rate.
 This package transforms spectrograms to frequency drift rate (FDR) matrices for
 a given set of drift rates.  The brute force approach is not very efficient, but
 techniques such as the Taylor Tree algorithm minimize (if not eliminate)
-redundant calculations and can be quite efficient.  This package uses a novel
-application of the Chirp-Z Transform to perform the transformation from
-spectrogram to FDR matrix.  This approach is referred to as the *Chirp-Z
-De-Doppler Transform*, or just *ZDT* for short.
+redundant calculations and can be quite efficient.  This package implements the
+Taylor Tree algorithm as well as a novel application of the Chirp-Z Transform to
+perform the transformation from spectrogram to FDR matrix.  The latter approach
+is referred to as the *Chirp-Z De-Doppler Transform*, or just *ZDT* for short.
 
 Computing the FDR matrix with this package is just the first step of a Doppler
 drift search.  The next step is finding the points in the FDR matrix that have
@@ -79,17 +79,23 @@ given set of drift rates.  The FDR matrix may be plotted using, for example, the
 plot* because Doppler drifting narrow band signals are associated with
 characteristic structure in the plot resembling a butterfly.
 
-Three different techniques for generating FDR matrices are supported:
+Four different techniques for generating FDR matrices are supported:
 
-- Integer shifting (brute force)
-- Fourier domain shifting
-- Chirp-Z De-Doppler Transform (ZDT)
+- Integer shifting (brute force; `intfdr`)
+- Taylor tree (recursive integer shift-and-sum; `taylorfdr`)
+- Fourier domain shifting (`fftfdr`)
+- Chirp-Z De-Doppler Transform (ZDT; `zdtfdr`)
 
 The integer shifting technique employed by this package uses a brute force
-approach.  It is intended to be illustrative rather than practical.  A faster
-variation of the integer shifting approach can be realized by using the Taylor
-Tree algorithm to minimize redundant calculations, but this package does not
-(yet) include such functionality (contributions are always welcome!).
+approach.  It is intended to be illustrative rather than practical.
+
+The Taylor tree technique computes the sums along the drift lines for `Ntp`
+evenly spaced drift rates spanning a full unit of normalized drift rate (one
+"drift block") in `O(Nf * Nt * log2(Ntp))` operations, where `Ntp` is the
+number of time samples zero-padded up to the next power of 2.  It is based on
+the reference implementation in
+[seticore](https://github.com/lacker/seticore) and, like the ZDT, uses the same
+code on CPU and GPU.
 
 The Fourier domain shifting technique employed by this package is also more
 illustrative than practical.  It computes each "drift rate spectrum" of the FDR

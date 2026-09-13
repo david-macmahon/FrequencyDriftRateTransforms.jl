@@ -14,6 +14,11 @@ export fdshiftsum, fdshiftsum!
 export fdshift, fdshift!
 export fftfdr, fftfdr!
 
+# taylorfdr.jl
+export TaylorWorkspace
+export taylorrates, taylorstep!, taylortree!, taylortree
+export taylorfdr, taylorfdr!
+
 # zdtfdr.jl
 export ZDTWorkspace
 export input!, output!
@@ -41,6 +46,7 @@ include("batchrates.jl")
 include("fdrutils.jl")
 include("intfdr.jl")
 include("fftfdr.jl")
+include("taylorfdr.jl")
 include("zdtfdr.jl")
 include("zdtutils.jl")
 
