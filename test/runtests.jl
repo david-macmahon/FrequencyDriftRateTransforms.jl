@@ -1,5 +1,6 @@
 using FrequencyDriftRateTransforms
 using Test
+using Statistics
 
 if dirname(something(Base.current_project(), "")) == @__DIR__
     using CUDA
@@ -100,6 +101,42 @@ include("taylorreference.jl")
 
         @test taylorrates(8, 0) == range(0//7, step=1//7, length=8)
         @test collect(taylorrates(8, -2)) == collect(range(-2, step=1//7, length=8))
+    end
+
+    @testset "fdrstats" begin
+        # taylorfdr drift blocks with out-of-band drift produce all-zero
+        # columns; fdrstats must ignore them (fdrnormalize! used to divide by
+        # zero, producing NaNs)
+        spec = Float32[mod(1013*i*i + 7*i*j + 61*j*j, 1001) for i in 1:37, j in 1:64]
+        fdr = taylorfdr(spec, 0)   # top 27 columns are all zero
+        fdr1 = taylorfdr(spec, 1)  # every column is all zero
+        m, s = fdrstats(fdr)
+        @test 0 < s < Inf
+        @test fdrstats([fdr, fdr1]) == (m, s)
+        @test all(isfinite, fdrnormalize!(fdr))
+
+        @test fdrstats(fdr1) == (0.0f0, Inf)
+        @test fdrnormalize!(fdr1) == zeros(37, 64)
+        @test fdrdenormalize(5.0, fdr1) == Inf
+        @test isempty(findprotohits(fdr1, 5.0; snr=true))
+
+        # Iterable-of-matrices variants
+        @test fdrstats([fdr1]) == (0.0f0, Inf)
+        fdrs = [copy(fdr1), copy(fdr)]
+        fdrnormalize!(fdrs)
+        @test all(isfinite, fdrs[1]) && all(isfinite, fdrs[2])
+        @test fdrdenormalize(5.0, [copy(fdr1)]) == Inf
+        @test isempty(findprotohits([copy(fdr1)], 5.0; snr=true))
+
+        # The mean comes from the first column with data, even when earlier
+        # columns/matrices are all zero
+        hand = zeros(Float32, 4, 8)
+        hand[:, 3] .= 1.0f0:4.0f0
+        m2, s2 = fdrstats(hand)
+        @test m2 == 2.5f0
+        @test s2 ≈ std(1.0f0:4.0f0)
+        @test fdrstats([copy(fdr1), taylorfdr(spec, 0)]) == (m, s)
+        @test fdrstats(fill(3.0f0, 4, 8)) == (3.0f0, Inf)
     end
 
     @testset "taylorstep!" begin
@@ -218,6 +255,12 @@ include("taylorreference.jl")
                 @test Array(taylorfdr(gs, 0)) == taylorfdr(d3[:, 1:5], 0)
             end
 
+            @testset "fdrstats [CUDA]" begin
+                gz = CuArray(zeros(Float32, 4, 4))
+                @test fdrstats(gz) == (0.0f0, Inf)
+                m, s = fdrstats(CuArray(d2))
+                @test 0 < s < Inf
+            end
         else
             @info "Skipping CUDA tests: no functional GPU available"
         end
