@@ -1,6 +1,7 @@
 using FrequencyDriftRateTransforms
 using Test
 using Statistics
+using DataDeps
 
 if dirname(something(Base.current_project(), "")) == @__DIR__
     using CUDA
@@ -268,12 +269,18 @@ include("taylorreference.jl")
 
 end;
 
-if get(ENV, "FDR_HEAVY_TESTS", "0") == "1"
+# Run the heavy tests if their dataset is already available locally (no
+# download needed), or if FDR_HEAVY_TESTS=1 is set (downloads on first use).
+# Keep the filename below in sync with test/heavytests.jl.
+voyager_datadir = DataDeps.try_determine_load_path("voyager-2020-single-coarse-channel", @__DIR__)
+voyager_ready = voyager_datadir !== nothing && isfile(joinpath(
+    voyager_datadir, "single_coarse_guppi_59046_80036_DIAG_VOYAGER-1_0011.rawspec.0000.h5"))
+if voyager_ready || get(ENV, "FDR_HEAVY_TESTS", "0") == "1"
     @testset "heavy tests" begin
         include("heavytests.jl")
     end
 else
-    @info "Skipping heavy tests (set FDR_HEAVY_TESTS=1 to enable; downloads data)"
+    @info "Skipping heavy tests (dataset not downloaded; set FDR_HEAVY_TESTS=1 to download and run)"
 end
 
 # end of runtests.jl

@@ -1,15 +1,26 @@
 using FrequencyDriftRateTransforms
 using Test
 
-using Downloads
+using DataDeps
 using HDF5
 using H5Zbitshuffle
 using FFTW
 
-# Download test dataset and read specific range of frequencies (with known
-# drifting signal)
-voyager_url = "http://blpd14.ssl.berkeley.edu/voyager_2020/single_coarse_channel/single_coarse_guppi_59046_80036_DIAG_VOYAGER-1_0011.rawspec.0000.h5"
-h5 = h5open(Downloads.download(voyager_url))
+# The test dataset is downloaded (and its SHA256 checksum verified) on first
+# use, then cached in the DataDeps folder (typically ~/.julia/datadeps), so it
+# is only ever downloaded once.  The always-accept setting skips DataDeps'
+# interactive download prompt (e.g. for CI).
+ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+voyager_filename = "single_coarse_guppi_59046_80036_DIAG_VOYAGER-1_0011.rawspec.0000.h5"
+DataDeps.register(DataDep(
+    "voyager-2020-single-coarse-channel",
+    "Voyager 2020 single coarse channel HDF5 spectrogram (Breakthrough Listen Public Data Archive)",
+    "https://bldata.berkeley.edu/voyager_2020/single_coarse_channel/$(voyager_filename)",
+    "a4f9d9da015b4d45054ef91a1d95dc27138e495d887f595970c13828a76c9412",
+))
+
+# Read specific range of frequencies (with known drifting signal)
+h5 = h5open(joinpath(datadep"voyager-2020-single-coarse-channel", voyager_filename))
 freq_range = range(659935, length=150)
 spectrogram = h5["data"][freq_range,1,:]
 rates = 0:-0.25:-5
