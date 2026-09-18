@@ -23,7 +23,7 @@ DataDeps.register(DataDep(
 h5 = h5open(joinpath(datadep"voyager-2020-single-coarse-channel", voyager_filename))
 freq_range = range(659935, length=150)
 spectrogram = h5["data"][freq_range,1,:]
-rates = 0:-0.25:-5
+rates = 0:0.25:5
 
 @testset "FrequencyDriftRateTransforms.jl" begin
     fdr = intfdr(spectrogram, rates)
@@ -37,7 +37,7 @@ rates = 0:-0.25:-5
     @test pkidx == CartesianIndex(55, 11)
 
     # De-doppler spectrogram with known drift rate
-    dedop = fdshift(fftws, -2.43)
+    dedop = fdshift(fftws, 2.43)
     # Find maximum value for each time sample
     peaks = maximum(dedop, dims=1)
     # All peaks should be in channel 55
