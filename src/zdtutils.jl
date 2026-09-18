@@ -21,7 +21,7 @@ end
 """
     estimate_memory(Nf, Nt, Nr, Ni=1, No=1; factors=(2,3,5))
 
-Estimate the number of bytes required on the GPU for the given paramters:
+Estimate the number of bytes required on the GPU for the given parameters:
 - `Nf`: The number of frequency channels in the input spectrogram
 - `Nt`: The number of time samples in the input spectrogram
 - `Nr`: The number of drift rates to search (per batch)
@@ -57,7 +57,7 @@ end
 
 Return the Range of normalized drift rates that `zdtws` has been configured to
 use.  An alternate *normalized* `r0` value may be given to override
-`workspace.r0`.
+`zdtws.r0`.
 """
 function driftrates(zdtws::ZDTWorkspace, r0=zdtws.r0)
     range(r0, step=zdtws.δr, length=zdtws.Nr)

@@ -22,7 +22,7 @@ end
 """
     fdrsynchronize(::Type{<:CuArray})
 
-CUDA-specific implementation of this function that calls CUDA's synchronize()`.
+CUDA-specific implementation of this function that calls CUDA's `synchronize()`.
 """
 function fdrsynchronize(::Type{<:CuArray})
     synchronize()

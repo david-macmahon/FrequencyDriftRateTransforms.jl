@@ -1,9 +1,11 @@
 """
     batchrates(Nt, δhzps, r1, r2=-r1; Nrb=360) -> normalized_drift_rate_ranges
 
-Return an `Vector` of `Range` instances each of which is a "batch" of equally
-spaced *normaized* drift rates (suitable for passing to the `ZDTWorkspace`
-constructor).  In total, the `Range` instances span the given *NON-normalized*
+Return a `Vector` of `Range` instances each of which is a "batch" of equally
+spaced *normalized* drift rates.  Because the batches all have the same drift
+rate spacing, any one can be passed to the `ZDTWorkspace` constructor and the
+first drift rate of each batch can then be passed as `r0` to the `zdtfdr`
+functions.  In total, the `Range` instances span the given *NON-normalized*
 drift rates `r1` and `r2` (in `Hz/s`) in steps of `δhzps` (in `Hz/s`) for data
 with `Nt` time samples.  Often `δhzps` is calculated as `foff/tsamp/(Nt-1)`,
 where `foff` is the channel width in `Hz` and `tsamp` is the  interval between

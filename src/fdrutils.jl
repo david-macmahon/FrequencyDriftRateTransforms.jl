@@ -148,10 +148,10 @@ find all points that are greater than or equal to `threshold`.  For a single FDR
 matrix, this is essentially a simple wrapper around `findall`.  When an iterable
 of FDR matrices is passed, they are treated as drift rate adjacent portions of a
 larger FDR Matrix (as if they had been `hcat`'d together).  If `snr` is true,
-the threshold is `denormalized` based on `fdr` or `fdrs` before the comparison.
+the threshold is denormalized based on `fdr` or `fdrs` before the comparison.
 
 The resultant *proto-hits* are returned as `Vector{CartesianIndex}`, often
-referred to as `hijs` for "hit (i,j) coordinates".  The `hijs" at this stage are
+referred to as `hijs` for "hit (i,j) coordinates".  The `hijs` at this stage are
 called proto-hits (as opposed to "real" hits) since no clustering of neighboring
 proto-hits has been performed.
 """
