@@ -62,9 +62,9 @@ end
     fftfdr_workspace!(workspace, spectrogram) -> workspace
 
 Reinitialize `workspace` buffers using `spectrogram`.  An `ArgumentError` is
-thrown if `spectrogram` is type and/or size incompatible with `workspace`.  If `workspace`
-is `nothing`, then a new workspace is created.  The `bunaligned` keyword
-argument is ignored unless `workspace` is `nothing`.
+thrown if `spectrogram` is type and/or size incompatible with `workspace`.
+If `workspace` is `nothing`, then a new workspace is created.  The
+`bunaligned` keyword argument is ignored unless `workspace` is `nothing`.
 """
 function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
@@ -83,6 +83,12 @@ function fftfdr_workspace!(::Nothing, spectrogram::AbstractMatrix{<:Real}; bunal
     fftfdr_workspace(spectrogram; bunaligned=bunaligned)
 end
 
+"""
+    fdshiftsum!(dest, workspace, rate) -> dest
+
+Same as the `fdshiftsum` function, but store the result in `dest`, which is
+also returned.  `dest` must be a `Vector` of length `workspace.Nf`.
+"""
 function fdshiftsum!(dest::AbstractVector, workspace, rate)
     # Multiply the Fourier domain spectra by the doppler rate phasors.
     workspace.dest_phasor .= workspace.dest_rfft .*
@@ -95,12 +101,28 @@ function fdshiftsum!(dest::AbstractVector, workspace, rate)
     mul!(dest, workspace.bplan1d, workspace.dest_sum)
 end
 
+"""
+    fdshiftsum(workspace, rate) -> dest
+
+Compute one column of the frequency drift rate matrix for the given
+`workspace` and `rate` values (see [`fftfdr`](@ref)), i.e. the sum over time
+of the Fourier domain spectra in `workspace` after de-doppler shifting them
+for `rate`.  The returned `dest` will be a `Vector` of length
+`workspace.Nf`.
+"""
 function fdshiftsum(workspace, rate)
     Nf = workspace.Nf
     dest = similar(workspace.dest_sum, real(eltype(workspace.dest_sum)), Nf)
     fdshiftsum!(dest, workspace, rate)
 end
 
+"""
+    fdshift!(dest, workspace, rate) -> dest
+
+Same as the `fdshift` function, but store the result in `dest`, which is also
+returned.  `dest` must have size `(workspace.Nf, Nt)` where `Nt` is the
+number of time samples in the spectrogram used to create `workspace`.
+"""
 function fdshift!(dest::AbstractMatrix, workspace, rate)
     # Multiply the Fourier domain spectra by the doppler rate phasors.
     workspace.dest_phasor .= workspace.dest_rfft .*
@@ -110,6 +132,15 @@ function fdshift!(dest::AbstractMatrix, workspace, rate)
     mul!(dest, workspace.bplan2d, workspace.dest_phasor)
 end
 
+"""
+    fdshift(workspace, rate) -> dest
+
+Compute the *de-dopplered* spectrogram for the given `workspace` and `rate`
+values by de-doppler shifting the Fourier domain spectra in `workspace` for
+`rate` and transforming each time sample back to frequency.  The returned
+`dest` will be a `Matrix` with the same size as the spectrogram used to
+create `workspace`.
+"""
 function fdshift(workspace, rate)
     Nf = workspace.Nf
     Nt = size(workspace.dest_rfft, 2)
