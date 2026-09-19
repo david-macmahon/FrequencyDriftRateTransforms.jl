@@ -236,9 +236,85 @@ include("taylorreference.jl")
         end
     end
 
+    @testset "zdtfdr windows" begin
+        zdtws = ZDTWorkspace(d2, -1:0.5:1)
+        rect = zdtfdr(zdtws)
+        # Rectangular window via explicit symbol and function
+        @test zdtfdr(:rect, zdtws) == rect
+        @test zdtfdr((n, N) -> 1, zdtws) == rect
+        # Hamming window is a circular 3-point convolution with kernel
+        # [b/2, a, b/2] along frequency (see postphase extended help)
+        a, b = 0.53836, 0.46164
+        ham = zdtfdr(:hamming, zdtws)
+        @test ham ≈ a .* rect .+ b ./ 2 .*
+                    (circshift(rect, (1, 0)) .+ circshift(rect, (-1, 0)))
+        # The :hamming symbol matches the equivalent function window
+        @test zdtfdr((n, N) -> a + b * cospi(2n/N), zdtws) == ham
+        # In-place variant with window
+        dest = create_fdr(d2, 5)
+        @test zdtfdr!(:hamming, dest, zdtws) === dest
+        @test dest ≈ ham
+        # Unsupported window type
+        @test_throws ErrorException zdtfdr(:nope, zdtws)
+    end
+
     @testset "batchrates" begin
         # Needs at least 2 time samples (like taylorfdr)
         @test_throws ArgumentError batchrates(1, 0.1, 1.0)
+
+        # Unordered endpoints give the same batches
+        @test batchrates(64, 1/63, 2.0, -2.0) == batchrates(64, 1/63, -2.0, 2.0)
+
+        # Single batch with bonus rates distributed symmetrically
+        brs = batchrates(64, 1/63, 2.0, -2.0)
+        @test length(brs) == 1
+        @test brs[1] == range(-128//63, 128//63, length=257)
+
+        # Multiple equal-length batches whose concatenation is an
+        # ascending range covering the requested span (plus symmetric
+        # bonus rates bounded by half a batch length per side)
+        for (Nt, δhzps, r1, r2, Nrbkw) in ((64, 1/63, 10.0, -10.0, 360),
+                                           (128, 1/127, 0.5, 4.5, 64),
+                                           (32, 2.0, -20.0, 20.0, 16))
+            brs = batchrates(Nt, δhzps, r1, r2; Nrb=Nrbkw)
+            allrs = vcat(collect.(brs)...)
+            Nrb = length(first(brs))
+            @test length(brs) > 1
+            @test all(b -> length(b) == Nrb, brs)
+            @test rem(length(allrs), Nrb) == 0
+            @test issorted(allrs)
+            nc1 = round(Int, min(r1, r2)/δhzps)
+            nc2 = round(Int, max(r1, r2)/δhzps)
+            @test allrs[1] <= nc1//(Nt-1)
+            @test allrs[end] >= nc2//(Nt-1)
+            @test nc1 - allrs[1]*(Nt-1) <= cld(Nrb, 2)
+            @test allrs[end]*(Nt-1) - nc2 <= cld(Nrb, 2)
+        end
+
+        # Nrb=typemax(Int) forces a single batch
+        @test length(batchrates(64, 1/63, 10.0, -10.0; Nrb=typemax(Int))) == 1
+    end
+
+    @testset "zdtutils" begin
+        @test calcNl(64, 21) == 90
+        @test calcNl(17, 16) == 32  # Nt + Nr - 1 is exactly 32
+        @test calcNl(10, 10, (2,)) == 32
+        @test calcNl(64, 21, (2,3,5,7)) == 84
+        @test growNr(64, 21) == 27
+        @test growNr(16, 16) == 17
+        @test growNr(10, 10, (2,)) == 23
+        # Growing Nr to the full batch size does not change Nl
+        @test calcNl(64, growNr(64, 21)) == calcNl(64, 21)
+        @test estimate_memory(100, 50, 40) ==
+              4 * (100*50*4 + 100*90*3 + 100*40)
+        @test estimate_memory(100, 50, 40, 2, 3) ==
+              4 * (100*50*5 + 100*90*3 + 100*40*3)
+        @test estimate_memory(8, 8, 8; factors=(2,)) ==
+              4 * (8*8*4 + 8*16*3 + 8*8)
+        zdtws = ZDTWorkspace(d2, -1:0.5:1)
+        @test driftrates(zdtws) == range(-1.0f0, step=0.5f0, length=5)
+        @test collect(driftrates(zdtws)) ≈ collect(-1:0.5:1)
+        @test collect(driftrates(zdtws, 2.5)) ≈ collect(2.5:0.5:4.5)
     end
 
     if isdefined(Main, :CUDA)
