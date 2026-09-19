@@ -37,11 +37,21 @@ function intfdr!(fdr, spectrogram, rates)
     Nr = length(rates)
     size(fdr) == (Nf, Nr) ||
         throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
-    # Create 3D work array so that each rate will get its own work Matrix.
-    # This makes it possible to parallelize the for loop.
-    work = similar(spectrogram, Nf, Nt, Nr)
-    for (i,r) in enumerate(rates)
-        @views sum!(fdr[:,i], intshift!(work[:,:,i], spectrogram, r))
+    fill!(fdr, zero(eltype(fdr)))
+    # Accumulate the circularly shifted columns of `spectrogram` directly
+    # into `fdr` instead of materializing a shifted copy per rate, which
+    # keeps the extra memory at O(Nf) instead of O(Nf*Nt*Nr).  Each column
+    # is shifted by `round(r*(j-1))` channels and added as two ranged adds.
+    for j in axes(spectrogram, 2)
+        for (i, r) in enumerate(rates)
+            n = mod(round(Int, r*(j-1)), Nf)
+            if n == 0
+                fdr[:, i] .+= @view spectrogram[:, j]
+            else
+                fdr[1:Nf-n, i] .+= @view spectrogram[n+1:Nf, j]
+                fdr[Nf-n+1:Nf, i] .+= @view spectrogram[1:n, j]
+            end
+        end
     end
     return fdr
 end
