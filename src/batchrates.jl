@@ -22,6 +22,7 @@ may be slightly larger than `Nrb`.  To ensure a single batch, pass
     `δhzps`, `r1` and `r2` must be given in `Hz/s`.
 """
 function batchrates(Nt::Integer, δhzps, r1, r2=-r1; Nrb=360)
+    Nt >= 2 || throw(ArgumentError("number of time samples ($Nt) must be at least 2"))
     if r2 < r1
         r1, r2 = r2, r1
     end

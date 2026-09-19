@@ -187,11 +187,11 @@ include("taylorreference.jl")
         @test v2 == m2
 
         # Argument checking
-        @test_throws AssertionError taylorstep!(zeros(8, 8), zeros(8, 8), 3, 0)
-        @test_throws AssertionError taylorstep!(zeros(8, 8), zeros(8, 8), 16, 0)
-        @test_throws AssertionError taylorstep!(zeros(8, 6), zeros(8, 6), 4, 0)
-        @test_throws AssertionError taylorstep!(zeros(8, 8), zeros(8, 8), 2, 0, 16)
-        @test_throws AssertionError taylorstep!(zeros(8, 8), zeros(8, 5), 4, 0, 5)
+        @test_throws ArgumentError taylorstep!(zeros(8, 8), zeros(8, 8), 3, 0)
+        @test_throws ArgumentError taylorstep!(zeros(8, 8), zeros(8, 8), 16, 0)
+        @test_throws ArgumentError taylorstep!(zeros(8, 6), zeros(8, 6), 4, 0)
+        @test_throws ArgumentError taylorstep!(zeros(8, 8), zeros(8, 8), 2, 0, 16)
+        @test_throws ArgumentError taylorstep!(zeros(8, 8), zeros(8, 5), 4, 0, 5)
     end
 
     @testset "taylorfdr vs seticore reference" begin
@@ -234,6 +234,11 @@ include("taylorreference.jl")
                 end
             end
         end
+    end
+
+    @testset "batchrates" begin
+        # Needs at least 2 time samples (like taylorfdr)
+        @test_throws ArgumentError batchrates(1, 0.1, 1.0)
     end
 
     if isdefined(Main, :CUDA)

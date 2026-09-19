@@ -77,16 +77,22 @@ function taylorstep!(target::AbstractMatrix, source::AbstractMatrix,
     Nf = size(source, 1)
     Ntp = size(target, 2)
     L = path_length
-    @assert ispow2(L) && 2 <= L <= Ntp
-    @assert size(target, 1) == Nf && Ntp >= Nt
-    @assert rem(Ntp, L) == 0
+    ispow2(L) && 2 <= L <= Ntp ||
+        throw(ArgumentError("path_length ($L) must be a power of 2 (≥ 2) that does not exceed Ntp ($Ntp)"))
+    size(target, 1) == Nf ||
+        throw(ArgumentError("target must have $Nf rows (got $(size(target, 1)))"))
+    Ntp >= Nt ||
+        throw(ArgumentError("Nt ($Nt) must not exceed the logical time sample count of target ($Ntp)"))
+    rem(Ntp, L) == 0 ||
+        throw(ArgumentError("Ntp ($Ntp) must be a multiple of path_length ($L)"))
     half = L ÷ 2
     # Number of source (path_length/2) and target (path_length) time blocks
     # that contain real data; the last of each may be partially padded.
     nd2 = cld(Nt, half)
     ndL = cld(Nt, L)
     # The source must contain the path sums of all real-data source blocks.
-    @assert size(source, 2) >= nd2 * half
+    size(source, 2) >= nd2 * half ||
+        throw(ArgumentError("source must have at least $(nd2 * half) time columns for Nt ($Nt) and path_length ($L)"))
     for tb in 0:(ndL - 1)
         base = tb * L
         if 2 * tb + 1 <= nd2 - 1
@@ -175,9 +181,14 @@ function taylortree!(buffer1::AbstractMatrix, buffer2::AbstractMatrix,
                      spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
     Nf, Nt = size(spectrogram)
     Ntp = nextpow(2, Nt)
-    @assert size(buffer1) == (Nf, Ntp) && size(buffer2) == (Nf, Ntp)
-    @assert buffer1 !== buffer2
-    @assert spectrogram !== buffer1 && spectrogram !== buffer2
+    size(buffer1) == (Nf, Ntp) ||
+        throw(ArgumentError("buffer1 must have size ($Nf, $Ntp) (got $(size(buffer1)))"))
+    size(buffer2) == (Nf, Ntp) ||
+        throw(ArgumentError("buffer2 must have size ($Nf, $Ntp) (got $(size(buffer2)))"))
+    buffer1 === buffer2 &&
+        throw(ArgumentError("buffer1 and buffer2 must be distinct"))
+    (spectrogram === buffer1 || spectrogram === buffer2) &&
+        throw(ArgumentError("spectrogram must be distinct from buffer1 and buffer2"))
     Nt >= 2 || throw(ArgumentError("number of time samples ($Nt) must be at least 2"))
     # The datachan_low among the buffers looks like:
     # spectrogram -> buffer1 -> buffer2 -> buffer1 -> buffer2 -> ...
@@ -276,7 +287,8 @@ function taylorfdr!(fdr::AbstractMatrix, workspace::TaylorWorkspace,
     Nf, Nt = size(spectrogram)
     Ntp = nextpow(2, Nt)
     Nr = Ntp * length(drift_blocks)
-    @assert size(fdr) == (Nf, Nr)
+    size(fdr) == (Nf, Nr) ||
+        throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
     for (i, b) in enumerate(drift_blocks)
         result = taylortree!(workspace.buffer1, workspace.buffer2, spectrogram, b)
         copyto!(@view(fdr[:, (i-1)*Ntp .+ (1:Ntp)]), result)

@@ -61,18 +61,18 @@ end
 """
     fftfdr_workspace!(workspace, spectrogram) -> workspace
 
-Reinitialize `workspace` buffers using `spectrogram`.  An exception is thrown if
-`spectrogram` is type and/or size incompatible with `workspace`.  If `workspace`
+Reinitialize `workspace` buffers using `spectrogram`.  An `ArgumentError` is
+thrown if `spectrogram` is type and/or size incompatible with `workspace`.  If `workspace`
 is `nothing`, then a new workspace is created.  The `bunaligned` keyword
 argument is ignored unless `workspace` is `nothing`.
 """
 function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
     if size(workspace.dest_rfft) != (Nf÷2+1, Nt)
-        error("input spectrogram has unexpected size")
+        throw(ArgumentError("input spectrogram has unexpected size (got ($Nf, $Nt))"))
     end
     if eltype(workspace.dest_rfft) !== complex(eltype(spectrogram))
-        error("input spectrogram has unexpected element type")
+        throw(ArgumentError("input spectrogram has unexpected element type ($(eltype(spectrogram)))"))
     end
     # Size and eltype matches, FFT spectrogram into workspace
     mul!(workspace.dest_rfft, workspace.fplan, spectrogram)
@@ -126,7 +126,8 @@ returned.  The size of `fdr` must be `(workspace.Nf, length(rates))`.
 function fftfdr!(fdr, workspace, rates)
     Nf = workspace.Nf
     Nr = length(rates)
-    @assert size(fdr) == (Nf, Nr)
+    size(fdr) == (Nf, Nr) ||
+        throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
     for (col, rate) in zip(eachcol(fdr), rates)
         fdshiftsum!(col, workspace, rate)
     end

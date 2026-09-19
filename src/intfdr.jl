@@ -5,7 +5,8 @@ Circularly shift each column of `din` by an amount proportional to `rate` and
 store the results in `dout`.  The first column is un-shifted (i.e. shifted 0).
 """
 function intshift!(dout, din, rate)
-    @assert size(din) == size(dout)
+    size(din) == size(dout) ||
+        throw(ArgumentError("din and dout must have the same size (got $(size(din)) and $(size(dout)))"))
     for (i, (cin, cout)) in enumerate(zip(eachcol(din), eachcol(dout)))
         n = round(rate*(i-1))
         circshift!(cout, cin, -n)
@@ -34,7 +35,8 @@ returned.  The size of `fdr` must be `(size(spectrogram,1), length(rates))`.
 function intfdr!(fdr, spectrogram, rates)
     Nf, Nt = size(spectrogram)
     Nr = length(rates)
-    @assert size(fdr) == (Nf, Nr)
+    size(fdr) == (Nf, Nr) ||
+        throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
     # Create 3D work array so that each rate will get its own work Matrix.
     # This makes it possible to parallelize the for loop.
     work = similar(spectrogram, Nf, Nt, Nr)
