@@ -1,18 +1,20 @@
 module CUDAFrequencyDriftRateTransformsExt
 
 import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, output!,
-                                     fdrsynchronize
+                                     fdrsynchronize, taylortree!
 
 if isdefined(Base, :get_extension)
     import FFTW
-    using CUDA: CuArray, CuMatrix, synchronize
+    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, synchronize, @cuda,
+                blockIdx, threadIdx, blockDim
     using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
     import ..FFTW
-    import ..CUDA: CuArray, CuMatrix, synchronize
+    import ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, synchronize, @cuda,
+                   blockIdx, threadIdx, blockDim
     using ..CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
@@ -101,6 +103,97 @@ function output!(dest::CuMatrix{<:Real}, workspace)
     cufftExecC2R(workspace.irfft_plan.p, workspace.Ys, dest)
     dest .*= workspace.irfft_plan.scale
     return dest
+end
+
+# Taylor tree kernels.  Unlike the CPU implementation in src/taylorfdr.jl,
+# which uses virtual zero padding (never storing or computing on the
+# padding), the GPU implementation materializes the zero padding of the
+# spectrogram to Ntp = nextpow(2, Nt) time samples so that the kernels can
+# assume power-of-2 sizes with no special casing for padding (as in the
+# seticore reference implementation).  The results are identical to the
+# CPU implementation.
+
+"""
+    taylortree!(buffer1, buffer2, spectrogram::CuMatrix, drift_block) -> result
+
+CUDA implementation of `taylortree!` that materializes the zero padding of
+`spectrogram` to `Ntp = nextpow(2, Nt)` time samples and uses a CUDA kernel
+(one thread per output entry) for each Taylor tree step.
+"""
+function taylortree!(buffer1::CuMatrix, buffer2::CuMatrix,
+                     spectrogram::CuMatrix{<:Real}, drift_block::Integer)
+    Nf, Nt = size(spectrogram)
+    Ntp = nextpow(2, Nt)
+    drift_block = Int(drift_block)
+    size(buffer1) == (Nf, Ntp) ||
+        throw(ArgumentError("buffer1 must have size ($Nf, $Ntp) (got $(size(buffer1)))"))
+    size(buffer2) == (Nf, Ntp) ||
+        throw(ArgumentError("buffer2 must have size ($Nf, $Ntp) (got $(size(buffer2)))"))
+    buffer1 === buffer2 &&
+        throw(ArgumentError("buffer1 and buffer2 must be distinct"))
+    (spectrogram === buffer1 || spectrogram === buffer2) &&
+        throw(ArgumentError("spectrogram must be distinct from buffer1 and buffer2"))
+    Nt >= 2 || throw(ArgumentError("number of time samples ($Nt) must be at least 2"))
+    # Materialize the zero padding in buffer1
+    copyto!(view(buffer1, :, 1:Nt), spectrogram)
+    Nt < Ntp && fill!(view(buffer1, :, Nt+1:Ntp), zero(eltype(buffer1)))
+    # Run all rounds of the tree: buffer1 -> buffer2 -> buffer1 -> ...
+    source_buffer, target_buffer = buffer1, buffer2
+    L = 2
+    threads = min(Nf, 256)
+    blockrows = cld(Nf, threads)
+    while L <= Ntp
+        @cuda blocks=(Ntp, blockrows) threads=threads taylor_round_kernel!(
+            target_buffer, source_buffer, Nf, Ntp, L, drift_block)
+        source_buffer, target_buffer = target_buffer, source_buffer
+        L *= 2
+    end
+    # Zero the entries of the final result for paths that extend beyond the
+    # frequency band; they were never written by the rounds above.
+    @cuda blocks=cld(Ntp, 256) threads=256 taylor_zero_wedge_kernel!(
+        source_buffer, Nf, Ntp, drift_block)
+    return source_buffer
+end
+
+# One round of the Taylor tree; one thread per output entry of the round
+# (a power-of-2 padded variant of taylorstep! in src/taylorfdr.jl).
+# blockIdx.x selects the target column, threadIdx.x selects the frequency
+# channel so that consecutive threads access consecutive memory addresses.
+function taylor_round_kernel!(target::CuDeviceMatrix{T}, source::CuDeviceMatrix{T},
+                              Nf::Int, Ntp::Int, L::Int, drift_block::Int) where T
+    tcol = blockIdx().x
+    chan = (blockIdx().y - 1) * blockDim().x + threadIdx().x
+    chan > Nf && return
+    path_offset = rem(tcol - 1, L)
+    tb = (tcol - 1) ÷ L
+    half = L ÷ 2
+    half_offset = path_offset >> 1
+    shift = ((path_offset + 1) >> 1) + drift_block * half
+    drift_channels = path_offset + drift_block * (L - 1)
+    # Only write entries for paths that stay within the frequency band
+    if 1 <= chan + shift <= Nf && 1 <= chan + drift_channels <= Nf
+        @inbounds target[chan, tcol] =
+            source[chan, tb*L + half_offset + 1] +
+            source[chan + shift, tb*L + half_offset + half + 1]
+    end
+    return
+end
+
+# Zero the out-of-band wedge of a taylortree! result; one thread per column.
+function taylor_zero_wedge_kernel!(buffer::CuDeviceMatrix{T},
+                                   Nf::Int, Ntp::Int, drift_block::Int) where T
+    col = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    col > Ntp && return
+    drift_channels = (Ntp - 1) * drift_block + col - 1
+    chan_lo = max(1, 1 - drift_channels)
+    chan_hi = min(Nf, Nf - drift_channels)
+    for chan in 1:(chan_lo - 1)
+        @inbounds buffer[chan, col] = zero(T)
+    end
+    for chan in (chan_hi + 1):Nf
+        @inbounds buffer[chan, col] = zero(T)
+    end
+    return
 end
 
 end # module CUDAFrequencyDriftRateTransformsExt

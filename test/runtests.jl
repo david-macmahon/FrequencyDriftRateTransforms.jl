@@ -332,9 +332,22 @@ include("taylorreference.jl")
                 taylorfdr!(gout, TaylorWorkspace(g), g, 0)
                 @test Array(gout) == taylorfdr(d2, 0)
                 @test Array(taylorfdr(g, -1:1)) == taylorfdr(d2, -1:1)
-                # Non-power-of-2 time samples (virtual zero padding)
+                # Non-power-of-2 time samples (the GPU materializes the
+                # zero padding and the CPU virtualizes it; results match)
                 gs = CuArray(d3[:, 1:5])
                 @test Array(taylorfdr(gs, 0)) == taylorfdr(d3[:, 1:5], 0)
+                # Larger random cases, multiple drift blocks, pow2 and not
+                spec = randn(Float32, 128, 64)
+                gc = CuArray(spec)
+                @test Array(taylorfdr(gc, -1:1)) == taylorfdr(spec, -1:1)
+                spec = randn(Float32, 256, 100)
+                gc = CuArray(spec)
+                @test Array(taylorfdr(gc, -2:2)) == taylorfdr(spec, -2:2)
+                # taylortree! returns one of the two workspace buffers
+                gws = TaylorWorkspace(gc)
+                result = taylortree!(gws.buffer1, gws.buffer2, gc, 0)
+                @test result === gws.buffer1 || result === gws.buffer2
+                @test Array(result) == taylorfdr(spec, 0)
             end
 
             @testset "fdrstats [CUDA]" begin

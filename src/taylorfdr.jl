@@ -144,7 +144,10 @@ return the buffer containing the results.  `spectrogram` is only read, never
 written, and must be distinct from both buffers.  The buffers must be
 distinct from each other and both have size
 `(size(spectrogram, 1), Ntp)` where `Ntp = nextpow(2, Nt)` and `Nt` is the
-number of time samples in `spectrogram` (at least 2).
+number of time samples in `spectrogram` (at least 2).  When CUDA is loaded
+and the arrays are `CuArray`s, a CUDA kernel implementation of the tree is
+used; it materializes the zero padding described in the extended help
+instead of virtualizing it (the results are identical).
 
 # Extended help
 
