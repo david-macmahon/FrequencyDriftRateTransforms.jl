@@ -31,14 +31,22 @@ include("taylorreference.jl")
     end
 
     @testset "fftfdr" begin
-        fftws = fftfdr_workspace(d)
-        @test fdshift(fftws, 1) ≈ dshift1_expected 
+        fftws = FFTWorkspace(d)
+        @test fdshift(fftws, 1) ≈ dshift1_expected
         @test fftfdr(fftws, -1:1) ≈ fdr_expected
+        # Per-call spectrogram forms (reinput fused with the transform)
+        @test fftfdr(fftws, d, -1:1) ≈ fdr_expected
+        @test fftfdr!(create_fdr(d, -1:1), fftws, d, -1:1) ≈ fdr_expected
+        # One-shot form (workspace constructed internally)
+        @test fftfdr(d, -1:1) ≈ fdr_expected
     end
 
     @testset "zdtfdr [FFTW]" begin
         zdtws = ZDTWorkspace(d, -1:1)
         @test zdtfdr(zdtws) ≈ fdr_expected
+        # One-shot forms (workspace constructed internally)
+        @test zdtfdr(d, -1:1) ≈ fdr_expected
+        @test zdtfdr(:rect, d, -1:1) ≈ fdr_expected
     end
 
     # Larger shared test data: Nt=8 (power of 2, staircase matches intfdr's

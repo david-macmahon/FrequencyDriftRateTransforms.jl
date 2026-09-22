@@ -9,7 +9,8 @@ export intshift, intshift!
 export intfdr, intfdr!
 
 # fftfdr.jl
-export fftfdr_workspace, fftfdr_workspace!
+export FFTWorkspace, FFTWorkspace!
+export fftfdr_workspace, fftfdr_workspace!  # deprecated
 export fdshiftsum, fdshiftsum!
 export fdshift, fdshift!
 export fftfdr, fftfdr!

@@ -16,7 +16,7 @@ function phasor(ij::CartesianIndex, r, N)
 end
 
 """
-    fftfdr_workspace(spectrogram[; bunaligned=true]) -> workspace
+    FFTWorkspace(spectrogram[; bunaligned=true]) -> workspace
 
 Create a *workspace* suitable for use with `fdshift!` and `fftfdr!`.  The
 workspace includes all the required intermediate storage buffers and FFT plan
@@ -36,7 +36,7 @@ factors of 2, but it depends on the specifics of the FFT implementation.
 The workspace also includes an FFT plan suitable for generating a *de-dopplered*
 spectrogram for a given rate.  This functionality is provided by `fdshift!`.
 """
-function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
+function FFTWorkspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
     dest_rfft = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nt)
     dest_phasor = similar(dest_rfft)
@@ -59,14 +59,14 @@ function fftfdr_workspace(spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
 end
 
 """
-    fftfdr_workspace!(workspace, spectrogram) -> workspace
+    FFTWorkspace!(workspace, spectrogram) -> workspace
 
 Reinitialize `workspace` buffers using `spectrogram`.  An `ArgumentError` is
 thrown if `spectrogram` is type and/or size incompatible with `workspace`.
 If `workspace` is `nothing`, then a new workspace is created.  The
 `bunaligned` keyword argument is ignored unless `workspace` is `nothing`.
 """
-function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
+function FFTWorkspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
     Nf, Nt = size(spectrogram)
     if size(workspace.dest_rfft) != (Nf÷2+1, Nt)
         throw(ArgumentError("input spectrogram has unexpected size (got ($Nf, $Nt))"))
@@ -79,8 +79,29 @@ function fftfdr_workspace!(workspace, spectrogram::AbstractMatrix{<:Real}; bunal
     return workspace
 end
 
-function fftfdr_workspace!(::Nothing, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
-    fftfdr_workspace(spectrogram; bunaligned=bunaligned)
+function FFTWorkspace!(::Nothing, spectrogram::AbstractMatrix{<:Real}; bunaligned=true)
+    FFTWorkspace(spectrogram; bunaligned=bunaligned)
+end
+
+"""
+    fftfdr_workspace(spectrogram[; bunaligned=true])
+
+Deprecated alias of [`FFTWorkspace`](@ref).
+"""
+function fftfdr_workspace(args...; kwargs...)
+    Base.depwarn("`fftfdr_workspace` is deprecated, use `FFTWorkspace`", :fftfdr_workspace)
+    FFTWorkspace(args...; kwargs...)
+end
+
+"""
+    fftfdr_workspace!(workspace, spectrogram)
+
+Deprecated alias of [`FFTWorkspace!`](@ref).
+"""
+function fftfdr_workspace!(args...; kwargs...)
+    Base.depwarn("`fftfdr_workspace!` is deprecated, use `FFTWorkspace!`",
+                 :fftfdr_workspace!)
+    FFTWorkspace!(args...; kwargs...)
 end
 
 """
@@ -176,5 +197,40 @@ function fftfdr(workspace, rates)
     Nf = workspace.Nf
     Nr = length(rates)
     fdr = similar(workspace.dest_sum, real(eltype(workspace.dest_sum)), Nf, Nr)
+    fftfdr!(fdr, workspace, rates)
+end
+
+"""
+    fftfdr(spectrogram, rates) -> fdr
+
+One-shot form of `fftfdr`: construct an [`FFTWorkspace`](@ref) for
+`spectrogram` and return `fftfdr(workspace, rates)`.  Constructing a workspace
+for every call is relatively expensive; reuse a workspace when computing
+multiple transforms of the same size.
+"""
+function fftfdr(spectrogram::AbstractMatrix{<:Real}, rates)
+    fftfdr(FFTWorkspace(spectrogram), rates)
+end
+
+"""
+    fftfdr(workspace, spectrogram, rates) -> fdr
+
+One-shot form that first reinputs `spectrogram` into `workspace` (as
+[`FFTWorkspace!`](@ref) does) and then returns `fftfdr(workspace, rates)`.
+This avoids the stale-data hazard of reusing a workspace without reinput.
+"""
+function fftfdr(workspace, spectrogram::AbstractMatrix{<:Real}, rates)
+    FFTWorkspace!(workspace, spectrogram)
+    fftfdr(workspace, rates)
+end
+
+"""
+    fftfdr!(fdr, workspace, spectrogram, rates) -> fdr
+
+Same as `fftfdr!(fdr, workspace, rates)`, but first reinputs `spectrogram`
+into `workspace` (as [`FFTWorkspace!`](@ref) does).
+"""
+function fftfdr!(fdr, workspace, spectrogram::AbstractMatrix{<:Real}, rates)
+    FFTWorkspace!(workspace, spectrogram)
     fftfdr!(fdr, workspace, rates)
 end

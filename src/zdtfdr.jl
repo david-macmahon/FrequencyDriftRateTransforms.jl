@@ -7,6 +7,19 @@ using LinearAlgebra
 # https://github.com/JuliaMath/AbstractFFTs.jl/issues/71
 import FFTW
 
+"""
+    ZDTWorkspace(spectrogram, rates[, factors=(2, 3, 5)]; output_aligned=false) -> workspace
+
+Create a *workspace* suitable for use with `zdtfdr` and `zdtfdr!`.  The
+workspace includes the intermediate storage buffers and FFT plans needed for
+creating a frequency drift rate matrix for `spectrogram` using the ZDT
+algorithm for the `length(rates)` normalized drift rates in `rates` (see
+[`driftrates`](@ref)).  `factors` restricts the internal FFT sizes (see
+[`calcNl`](@ref)).  A workspace can be reused for any spectrogram of the same
+size and element type; pass a new `spectrogram` to `zdtfdr!` to reload it.
+`output_aligned` may be set to `true` if the output buffers will be suitably
+aligned for the FFT implementation.
+"""
 mutable struct ZDTWorkspace{T}
     Nf::Int
     Nt::Int
@@ -431,4 +444,23 @@ end
 
 function zdtfdr(workspace, spectrogram=nothing; r0::Real=workspace.r0)
     zdtfdr(Val(:rect), workspace, spectrogram; r0)
+end
+
+"""
+    zdtfdr([w,] spectrogram, rates[, factors]; output_aligned=false) -> fdr
+
+One-shot form of `zdtfdr`: construct a [`ZDTWorkspace`](@ref) for `spectrogram`
+and `rates` (and `factors`) and return `zdtfdr(workspace)` (or `zdtfdr(w,
+workspace)` for a windowing function `w`; see [`zdtfdr!`](@ref) for `w`).
+Constructing a workspace for every call is relatively expensive; reuse a
+workspace when computing multiple ZDTs of the same size.
+"""
+function zdtfdr(spectrogram::AbstractMatrix{<:Real}, rates::AbstractRange,
+                factors=(2, 3, 5); output_aligned=false)
+    zdtfdr(ZDTWorkspace(spectrogram, rates, factors; output_aligned=output_aligned))
+end
+
+function zdtfdr(w::Union{Function,Symbol,Val}, spectrogram::AbstractMatrix{<:Real},
+                rates::AbstractRange, factors=(2, 3, 5); output_aligned=false)
+    zdtfdr(w, ZDTWorkspace(spectrogram, rates, factors; output_aligned=output_aligned))
 end

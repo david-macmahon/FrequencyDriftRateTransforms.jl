@@ -31,7 +31,7 @@ rates = 0:0.25:5
     peak_idx = findfirst(==(peak), fdr)
     @test peak_idx == CartesianIndex(55, 11)
 
-    fftws = fftfdr_workspace(spectrogram)
+    fftws = FFTWorkspace(spectrogram)
     ffdr = fftfdr(fftws, rates)
     pkval, pkidx = findmax(ffdr)
     @test pkidx == CartesianIndex(55, 11)
