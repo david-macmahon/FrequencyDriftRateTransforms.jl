@@ -285,47 +285,88 @@ function taylortree!(workspace::TaylorWorkspace,
 end
 
 """
+    taylorfdr!(fdr, spectrogram, drift_block) -> fdr
+    taylorfdr!(fdr, workspace, spectrogram, drift_block) -> fdr
     taylorfdr!(fdr, spectrogram, drift_blocks) -> fdr
     taylorfdr!(fdr, workspace, spectrogram, drift_blocks) -> fdr
+    taylorfdr!(dests, spectrogram, drift_blocks) -> dests
+    taylorfdr!(dests, workspace, spectrogram, drift_blocks) -> dests
 
-Same as the `taylorfdr` function, but store the results in `fdr`, which is
-also returned.  The size of `fdr` must be
-`(size(spectrogram, 1), length(drift_blocks) * Ntp)`, where
-`Ntp = nextpow(2, size(spectrogram, 2))`.  The columns of `fdr` are grouped
-by drift block in the order given by `drift_blocks`; the drift rates for the
-columns of group `i` are given by the `i`th range returned by
-`taylorrates(size(spectrogram, 2), drift_blocks)`.
-
-A `TaylorWorkspace` created for `spectrogram` may be passed as `workspace` to
+Same as the `taylorfdr` function, but store the results in `fdr` (or in the
+vector of FDR matrices `dests`), which is also returned.  For a single
+integer drift block, `fdr` must have size `(Nf, Ntp)`.  For a `UnitRange` of
+drift blocks (consecutive blocks), the duplicated columns at the drift block
+seams are omitted, so `fdr` must have size
+`(Nf, (Ntp - 1) * length(drift_blocks) + 1)`.  For an `AbstractVector` of
+drift blocks, `dests` must have one `(Nf, Ntp)` matrix per drift block.  Here
+`Nf = size(spectrogram, 1)` and `Ntp = nextpow(2, size(spectrogram, 2))`.  A
+`TaylorWorkspace` created for `spectrogram` may be passed as `workspace` to
 avoid reallocating the work buffers on each call.
 """
 function taylorfdr!(fdr::AbstractMatrix, workspace::TaylorWorkspace,
-                    spectrogram::AbstractMatrix{<:Real}, drift_blocks)
+                    spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
     Nf, Nt = size(spectrogram)
     Ntp = nextpow(2, Nt)
-    Nr = Ntp * length(drift_blocks)
-    size(fdr) == (Nf, Nr) ||
-        throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
-    for (i, b) in enumerate(drift_blocks)
-        result = taylortree!(workspace.buffer1, workspace.buffer2, spectrogram, b)
-        copyto!(@view(fdr[:, (i-1)*Ntp .+ (1:Ntp)]), result)
-    end
+    size(fdr) == (Nf, Ntp) ||
+        throw(ArgumentError("fdr must have size ($Nf, $Ntp) (got $(size(fdr)))"))
+    result = taylortree!(workspace.buffer1, workspace.buffer2, spectrogram,
+                         drift_block)
+    copyto!(fdr, result)
     return fdr
 end
 
 function taylorfdr!(fdr::AbstractMatrix, workspace::TaylorWorkspace,
-                    spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
-    taylorfdr!(fdr, workspace, spectrogram, (drift_block,))
+                    spectrogram::AbstractMatrix{<:Real},
+                    drift_blocks::UnitRange{<:Integer})
+    isempty(drift_blocks) &&
+        throw(ArgumentError("drift_blocks must not be empty"))
+    Nf, Nt = size(spectrogram)
+    Ntp = nextpow(2, Nt)
+    Nr = (Ntp - 1) * length(drift_blocks) + 1
+    size(fdr) == (Nf, Nr) ||
+        throw(ArgumentError("fdr must have size ($Nf, $Nr) (got $(size(fdr)))"))
+    for (i, b) in enumerate(drift_blocks)
+        result = taylortree!(workspace.buffer1, workspace.buffer2, spectrogram, b)
+        if i == 1
+            copyto!(@view(fdr[:, 1:Ntp]), result)
+        else
+            # Skip the block's first column: the blocks are consecutive, so
+            # it duplicates the last column of the previous block.
+            copyto!(view(fdr, :, (i - 1) * (Ntp - 1) .+ (2:Ntp)),
+                    view(result, :, 2:Ntp))
+        end
+    end
+    return fdr
 end
 
-function taylorfdr!(fdr::AbstractMatrix, spectrogram::AbstractMatrix{<:Real},
-                    drift_blocks)
-    taylorfdr!(fdr, TaylorWorkspace(spectrogram), spectrogram, drift_blocks)
+function taylorfdr!(dests::AbstractVector, workspace::TaylorWorkspace,
+                    spectrogram::AbstractMatrix{<:Real},
+                    drift_blocks::AbstractVector{<:Integer})
+    isempty(drift_blocks) &&
+        throw(ArgumentError("drift_blocks must not be empty"))
+    length(dests) == length(drift_blocks) ||
+        throw(ArgumentError("dests must have one FDR matrix per drift block "
+                            * "(got $(length(dests)) dests for "
+                            * "$(length(drift_blocks)) drift blocks)"))
+    for (dest, b) in zip(dests, drift_blocks)
+        taylorfdr!(dest, workspace, spectrogram, b)
+    end
+    return dests
 end
 
 function taylorfdr!(fdr::AbstractMatrix, spectrogram::AbstractMatrix{<:Real},
                     drift_block::Integer)
-    taylorfdr!(fdr, spectrogram, (drift_block,))
+    taylorfdr!(fdr, TaylorWorkspace(spectrogram), spectrogram, drift_block)
+end
+
+function taylorfdr!(fdr::AbstractMatrix, spectrogram::AbstractMatrix{<:Real},
+                    drift_blocks::UnitRange{<:Integer})
+    taylorfdr!(fdr, TaylorWorkspace(spectrogram), spectrogram, drift_blocks)
+end
+
+function taylorfdr!(dests::AbstractVector, spectrogram::AbstractMatrix{<:Real},
+                    drift_blocks::AbstractVector{<:Integer})
+    taylorfdr!(dests, TaylorWorkspace(spectrogram), spectrogram, drift_blocks)
 end
 
 # The Taylor tree algorithm always reads the raw spectrogram, so unlike
@@ -334,46 +375,77 @@ function taylorfdr!(fdr::AbstractMatrix, ::TaylorWorkspace, drift_blocks)
     error("taylorfdr! requires a spectrogram argument")
 end
 
-"""
-    taylorfdr(spectrogram, drift_blocks) -> fdr
+function taylorfdr!(dests::AbstractVector, ::TaylorWorkspace, drift_blocks)
+    error("taylorfdr! requires a spectrogram argument")
+end
 
-Compute the frequency drift rate matrix for the given `spectrogram` and
-Taylor tree drift blocks using the Taylor tree algorithm.  `drift_blocks` may
-be a single integer drift block or any collection of integer drift blocks.
-The first (fastest changing) dimension of `spectrogram` is frequency and the
-second dimension (slowest changing) is time, which must be at least 2.  If
-the number of time samples `Nt` is not a power of 2, the data are treated as
-if zero-padded in time to `Ntp = nextpow(2, Nt)` without materializing the
-padding (see [`taylortree!`](@ref)).  The size of the returned frequency
-drift rate matrix will be `(size(spectrogram, 1), length(drift_blocks) * Ntp)`.
+"""
+    taylorfdr(spectrogram, drift_block::Integer) -> fdr
+    taylorfdr(spectrogram, drift_blocks::UnitRange) -> fdr
+    taylorfdr(spectrogram, drift_blocks::AbstractVector) -> Vector of fdr
+
+Compute frequency drift rate matrices for the given `spectrogram` and Taylor
+tree drift blocks using the Taylor tree algorithm.  The first (fastest
+changing) dimension of `spectrogram` is frequency and the second dimension
+(slowest changing) is time, which must be at least 2.  If the number of time
+samples `Nt` is not a power of 2, the data are treated as if zero-padded in
+time to `Ntp = nextpow(2, Nt)` without materializing the padding (see
+[`taylortree!`](@ref)).
 
 Drift block `b` computes path sums for the `Ntp` normalized drift rates
 `b + p/(Ntp-1)` for `p` in `0:(Ntp-1)`, i.e. the normalized drift rates from
-`b` to `b+1` inclusive.  Use `taylorrates` to get the range(s) of drift
-rates corresponding to the columns of the returned matrix.
+`b` to `b+1` inclusive.  Use `taylorrates` to get the drift rate range(s)
+corresponding to the columns of the returned FDR matrix or matrices.  Note
+that out-of-band path sums are zeroed (see [`taylortree!`](@ref)), whereas
+`intfdr!` wraps paths around the edges of the spectrogram circularly.
 
-Note that out-of-band path sums are zeroed (see [`taylortree!`](@ref)),
-whereas `intfdr!` wraps paths around the edges of the spectrogram circularly.
+For a single integer `drift_block`, the returned FDR matrix has size
+`(size(spectrogram, 1), Ntp)`.  For a `UnitRange` of drift blocks (i.e.
+consecutive blocks), the duplicated columns at the drift block seams are
+omitted, so the returned FDR matrix has size
+`(size(spectrogram, 1), (Ntp - 1) * length(drift_blocks) + 1)` and its drift
+rates form a single grid with a fixed step of `1/(Ntp-1)` (see
+[`taylorrates`](@ref)).  For an `AbstractVector` of drift blocks, a `Vector`
+of FDR matrices is returned instead, one per drift block (each of size
+`(size(spectrogram, 1), Ntp)`, seams included).
 """
-function taylorfdr(spectrogram::AbstractMatrix{<:Real}, drift_blocks)
+function taylorfdr(spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
     Nf, Nt = size(spectrogram)
     Ntp = nextpow(2, Nt)
-    fdr = similar(spectrogram, Nf, Ntp * length(drift_blocks))
-    taylorfdr!(fdr, spectrogram, drift_blocks)
+    fdr = similar(spectrogram, Nf, Ntp)
+    taylorfdr!(fdr, TaylorWorkspace(spectrogram), spectrogram, drift_block)
 end
 
-function taylorfdr(spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
-    taylorfdr(spectrogram, (drift_block,))
+function taylorfdr(spectrogram::AbstractMatrix{<:Real},
+                   drift_blocks::UnitRange{<:Integer})
+    Nf, Nt = size(spectrogram)
+    Ntp = nextpow(2, Nt)
+    fdr = similar(spectrogram, Nf, (Ntp - 1) * length(drift_blocks) + 1)
+    taylorfdr!(fdr, TaylorWorkspace(spectrogram), spectrogram, drift_blocks)
+end
+
+function taylorfdr(spectrogram::AbstractMatrix{<:Real},
+                   drift_blocks::AbstractVector{<:Integer})
+    isempty(drift_blocks) &&
+        throw(ArgumentError("drift_blocks must not be empty"))
+    Nf, Nt = size(spectrogram)
+    Ntp = nextpow(2, Nt)
+    dests = [similar(spectrogram, Nf, Ntp) for _ in drift_blocks]
+    taylorfdr!(dests, TaylorWorkspace(spectrogram), spectrogram, drift_blocks)
 end
 
 """
     taylorrates(Nt, drift_block) -> range
+    taylorrates(Nt, drift_blocks::UnitRange) -> range
     taylorrates(Nt, drift_blocks) -> vector of ranges
 
 Return the range of *normalized* drift rates computed by the Taylor tree for
-`Nt` time samples and drift block `drift_block`, or a `Vector` of such ranges
-(one per entry of `drift_blocks`).  If `Nt` is not a power of 2 it is treated
-as zero-padded in time to `Ntp = nextpow(2, Nt)` (see `taylortree!`).  Drift
+`Nt` time samples and drift block `drift_block`, a single range spanning all
+the drift blocks of a `UnitRange` (with the drift rates shared at the block
+seams appearing once, matching the seam-deduplicated columns of the
+`taylorfdr`/`taylorfdr!` output), or a `Vector` of such ranges (one per
+entry of `drift_blocks`).  If `Nt` is not a power of 2 it is treated as
+zero-padded in time to `Ntp = nextpow(2, Nt)` (see `taylortree!`).  Drift
 block `b` covers the normalized drift rates from `b` to `b+1` inclusive in
 steps of `1/(Ntp-1)`.  The result(s) match the column ordering of `taylorfdr`
 and `taylorfdr!` output and, like the ranges returned by `batchrates`, are
@@ -386,6 +458,17 @@ function taylorrates(Nt::Integer, drift_block::Integer)
     range(nc1 // Nrm1, step = 1 // Nrm1, length = Ntp)
 end
 
-function taylorrates(Nt::Integer, drift_blocks)
+function taylorrates(Nt::Integer, drift_blocks::UnitRange{<:Integer})
+    isempty(drift_blocks) &&
+        throw(ArgumentError("drift_blocks must not be empty"))
+    Ntp = nextpow(2, Nt)
+    Nrm1 = Ntp - 1
+    range(first(drift_blocks), step = 1 // Nrm1,
+          length = Nrm1 * length(drift_blocks) + 1)
+end
+
+function taylorrates(Nt::Integer, drift_blocks::AbstractVector{<:Integer})
+    isempty(drift_blocks) &&
+        throw(ArgumentError("drift_blocks must not be empty"))
     [taylorrates(Nt, b) for b in drift_blocks]
 end

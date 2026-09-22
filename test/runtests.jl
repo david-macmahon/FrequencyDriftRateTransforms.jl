@@ -57,15 +57,16 @@ include("taylorreference.jl")
     d3 = Float32[sin(0.7*i + 0.3*j) * cos(0.1*i*j) for i in 1:Nf, j in 1:16]
 
     @testset "taylorfdr" begin
-        # Nt=2, so drift blocks -1 and 0 cover rates -1:1 (rate 0 twice)
+        # Nt=2, so drift blocks -1:0 cover rates -1:1; the UnitRange form
+        # deduplicates the drift rate 0 shared at the block seam
         taylor_expected = Float32[
-            0 0 0 1
-            1 2 2 1
-            1 0 0 0
+            0 0 1
+            1 2 1
+            1 0 0
         ]
         @test taylorfdr(d, -1:0) == taylor_expected
         @test taylorfdr(d, -1) == taylor_expected[:, 1:2]
-        @test taylorfdr(d, 0) == taylor_expected[:, 3:4]
+        @test taylorfdr(d, 0) == taylor_expected[:, 2:3]
 
         # Requires at least 2 time samples
         @test_throws ArgumentError taylorfdr(zeros(Float32, 8, 1), 0)
@@ -105,12 +106,30 @@ include("taylorreference.jl")
         # taylortree! with a TaylorWorkspace
         @test taylortree!(TaylorWorkspace(d2), d2, 0) == taylorfdr(d2, 0)
 
-        # Columns are grouped by drift block in the given order
+        # A UnitRange of drift blocks omits the duplicated seam columns, so
+        # the drift rate axis is a single uniform grid
         tf3 = taylorfdr(d2, -1:1)
-        @test size(tf3) == (Nf, 3Nt)
+        @test size(tf3) == (Nf, 3Nt - 2)
         @test tf3[:, 1:Nt] == taylorfdr(d2, -1)
-        @test tf3[:, Nt+1:2Nt] == taylorfdr(d2, 0)
-        @test tf3[:, 2Nt+1:3Nt] == taylorfdr(d2, 1)
+        @test tf3[:, Nt:2Nt-1] == taylorfdr(d2, 0)
+        @test tf3[:, 2Nt-1:3Nt-2] == taylorfdr(d2, 1)
+        @test taylorrates(Nt, -1:1) == range(-1, step=1//(Nt-1), length=3Nt-2)
+
+        # A Vector of drift blocks returns one FDR per block (seams included)
+        tfv = taylorfdr(d2, [-1, 0, 1])
+        @test tfv isa Vector{<:Matrix}
+        @test size.(tfv) == [(Nf, Nt), (Nf, Nt), (Nf, Nt)]
+        @test tfv == [taylorfdr(d2, -1), taylorfdr(d2, 0), taylorfdr(d2, 1)]
+
+        # In-place variants
+        @test taylorfdr!(create_fdr(d2, 3Nt - 2), d2, -1:1) == tf3
+        dests = [create_fdr(d2, Nt) for _ in 1:3]
+        @test taylorfdr!(dests, d2, [-1, 0, 1]) === dests
+        @test dests == tfv
+
+        # Empty collections of drift blocks are rejected
+        @test_throws ArgumentError taylorfdr(d2, 1:0)
+        @test_throws ArgumentError taylorfdr(d2, Int[])
 
         @test taylorrates(8, 0) == range(0//7, step=1//7, length=8)
         @test collect(taylorrates(8, -2)) == collect(range(-2, step=1//7, length=8))
