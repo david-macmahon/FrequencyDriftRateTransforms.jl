@@ -94,8 +94,10 @@ evenly spaced drift rates spanning a full unit of normalized drift rate (one
 "drift block") in `O(Nf * Nt * log2(Ntp))` operations, where `Ntp` is the
 number of time samples zero-padded up to the next power of 2.  It is based on
 the reference implementation in
-[seticore](https://github.com/lacker/seticore) and, like the ZDT, uses the same
-code on CPU and GPU.
+[seticore](https://github.com/lacker/seticore).  The CPU implementation is
+generic Julia code; when CUDA.jl is loaded, a package extension provides
+dedicated GPU kernels for the inner `taylortree!` step, which are considerably
+faster than running the generic code on GPU arrays.
 
 The Fourier domain shifting technique employed by this package is also more
 illustrative than practical.  It computes each "drift rate spectrum" of the FDR
