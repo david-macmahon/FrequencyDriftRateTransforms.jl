@@ -1,6 +1,6 @@
 module CUDAFrequencyDriftRateTransformsExt
 
-import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, output!,
+import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, zdtoutput!,
                                      fdrsynchronize, taylortree!
 
 if isdefined(Base, :get_extension)
@@ -87,16 +87,16 @@ function plan_ffts!(workspace::ZDTWorkspace,
 end
 
 """
-    output!(dest::CuMatrix{<:Real}, workspace) -> dest
+    zdtoutput!(dest::CuMatrix{<:Real}, workspace) -> dest
 
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.  This method
 exists to avoid an allocating hack that CUDA.jl employs to work around a CUFFT
 "known issue" that "cuFFT will always overwrite the input for out-of-place C2R
 transform".  In our case, we don't care whether the input, `workspace.Ys`, gets
-clobbered, but it does mean that `output!` cannot be called more than once per
+clobbered, but it does mean that `zdtoutput!` cannot be called more than once per
 ZDT operation.
 """
-function output!(dest::CuMatrix{<:Real}, workspace)
+function zdtoutput!(dest::CuMatrix{<:Real}, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
     # workspace.irfft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
     # CUDA 5.4.2 and earlier do not properly convert the ScaledPlan to a

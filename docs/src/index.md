@@ -115,3 +115,35 @@ The ZDT can compute an FDR matrix spanning many drift rates in smaller pieces,
 which can be very useful when working on a memory constrained device like a
 GPU.  The ZDT imposes one constraint: it must be used with evenly spaced drift
 rates.  This is rarely a problem in practice.
+
+## Batched drift rate searches
+
+The ZDT computes all `Nr` drift rates of a batch in one pass, so a wide drift
+rate search is typically split into batches of manageable size (e.g. to fit in
+GPU memory; the `estimate_memory` function estimates the required memory).
+The `batchrates` function splits a physical drift rate range (in `Hz/s`) into
+batches of evenly spaced normalized drift rates:
+
+```julia
+δhzps = foff / tsamp / (Nt - 1)  # drift rate step size in Hz/s
+batches = batchrates(Nt, δhzps, rmin, rmax)
+```
+
+All batches share the same length and step size, so a single `ZDTWorkspace`
+can be reused for every batch, with the `r0` keyword selecting the first rate
+of each batch.  Each batch's FDR matrix can then be searched for proto-hits:
+
+```julia
+ws = ZDTWorkspace(spectrogram, first(batches))
+for rates in batches
+    fdr = zdtfdr(ws; r0 = first(rates))
+    m, s = fdrstats(fdr)
+    hijs = findprotohits(fdr, fdrdenormalize(5.0, m, s))
+    # ... process hijs (e.g. cluster them into hits) ...
+end
+```
+
+Note the use of `fdrdenormalize` to denormalize the SNR threshold (5 sigma
+here) rather than normalizing the whole FDR matrix via `fdrnormalize!`; for
+searching, denormalizing the single threshold value is more efficient (see
+[`fdrdenormalize`](@ref)).

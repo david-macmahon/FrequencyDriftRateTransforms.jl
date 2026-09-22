@@ -1,8 +1,8 @@
 module FrequencyDriftRateTransforms
 
 # fdrutils.jl
-export create_fdr, fdrstats, fdrsynchronize
-export fdrnormalize!, fdrnormalize, fdrdenormalize, findprotohits
+export create_fdr, fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
+export findprotohits
 
 # intfdr.jl
 export intshift, intshift!
@@ -17,14 +17,16 @@ export fftfdr, fftfdr!
 
 # taylorfdr.jl
 export TaylorWorkspace
-export taylorrates, taylorstep!, taylortree!, taylortree
+export taylorrates, taylortree!, taylortree
 export taylorfdr, taylorfdr!
 
 # zdtfdr.jl
 export ZDTWorkspace
-export input!, output!
-export preprocess!, convolve!, postprocess!
+export zdtinput!, zdtoutput!
+export zdtpreprocess!, zdtconvolve!, zdtpostprocess!
 export zdtfdr, zdtfdr!
+export input!, output!  # deprecated
+export preprocess!, convolve!, postprocess!  # deprecated
 
 # zdtutils.jl, batchrates.jl
 export calcNl, growNr, estimate_memory, driftrates, batchrates

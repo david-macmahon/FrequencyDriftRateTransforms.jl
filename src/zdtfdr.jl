@@ -70,7 +70,7 @@ mutable struct ZDTWorkspace{T}
         plan_ffts!(ws, spectrogram; output_aligned=output_aligned)
 
         # Initialize F with FFT of spectrogram
-        input!(ws, spectrogram)
+        zdtinput!(ws, spectrogram)
 
         # Any V locations that fall between vlow and vhigh are described as
         # "don't care" values, but actually they are "don't care so long as they
@@ -81,7 +81,7 @@ mutable struct ZDTWorkspace{T}
         # Precompute V
         computeV!(ws)
 
-        # Wait for input! and computeV! or not, depending on typeof(spectrogram)
+        # Wait for zdtinput! and computeV! or not, depending on typeof(spectrogram)
         fdrsynchronize(typeof(spectrogram))
 
         return ws
@@ -215,23 +215,23 @@ function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
 end
 
 """
-    input!(workspace, spectrogram)
+    zdtinput!(workspace, spectrogram)
 
 Input FFT of `spectrogram` into `workspace.F`.
 """
-function input!(workspace, spectrogram)
+function zdtinput!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
     mul!(workspace.F, workspace.rfft_plan, spectrogram)
 end
 
 """
-    preprocess!(workspace, r0=workspace.r0)
+    zdtpreprocess!(workspace, r0=workspace.r0)
 
 Multiply `workspace.F` by `prephase` as per the parameters in `workspace`,
 storing results in `workspace.Yf`, then zero-pad the rest of `workspace.Y`.
 `r0` can be optionally specified to override `workspace.r0`.
 """
-function preprocess!(workspace, r0::Float32=workspace.r0)
+function zdtpreprocess!(workspace, r0::Float32=workspace.r0)
     Nf = workspace.Nf
     Nt = workspace.Nt
     δr = workspace.δr
@@ -247,19 +247,19 @@ function preprocess!(workspace, r0::Float32=workspace.r0)
     fill!(@view(Y[:, Nt+1:end]), zero(eltype(Y)))
 end
 
-function preprocess!(workspace, r0::Real)
-    preprocess!(workspace, Float32(r0))
+function zdtpreprocess!(workspace, r0::Real)
+    zdtpreprocess!(workspace, Float32(r0))
 end
 
 """
-    convolve!(workspace)
+    zdtconvolve!(workspace)
 
 Perform CZT convolution step for data in `workspace` by doing:
 1. In-place FFT `workspace.Y`
 2. In-place multiply of `workspace.Y` by `workspace.V`
 3. In-place backwards FFT of `Workspace.Y`
 """
-function convolve!(workspace)
+function zdtconvolve!(workspace)
     mul!(workspace.Y, workspace.fft_plan, workspace.Y)
     workspace.Y .*= workspace.V
     mul!(workspace.Y, workspace.ifft_plan, workspace.Y)
@@ -307,7 +307,7 @@ function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
 end
 
 """
-    postprocess!([w,] workspace)
+    zdtpostprocess!([w,] workspace)
 
 Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 
@@ -318,38 +318,38 @@ passed the zero-indexed channel number and the total number of channels and
 should return the window value for that channel number.  For details about the
 window function, see the extended help of [`postphase`](@ref).
 """
-function postprocess!(w::Function, workspace)
+function zdtpostprocess!(w::Function, workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
     workspace.Ys .*= postphase.(w, CartesianIndices(workspace.Ys),
                                 workspace.δr, workspace.Nf)
 end
 
-function postprocess!(::Val{:hamming}, workspace)
-    postprocess!((n,N)->(0.53836 + 0.46164 * cospi(2n/N)), workspace)
+function zdtpostprocess!(::Val{:hamming}, workspace)
+    zdtpostprocess!((n,N)->(0.53836 + 0.46164 * cospi(2n/N)), workspace)
 end
 
-function postprocess!(::Val{:rect}, workspace)
-    postprocess!((n,N)->1, workspace)
+function zdtpostprocess!(::Val{:rect}, workspace)
+    zdtpostprocess!((n,N)->1, workspace)
 end
 
-function postprocess!(::Val{S}, workspace) where S
+function zdtpostprocess!(::Val{S}, workspace) where S
     error("unsupported window type ($S)")
 end
 
-function postprocess!(w::Symbol, workspace)
-    postprocess!(Val(w), workspace)
+function zdtpostprocess!(w::Symbol, workspace)
+    zdtpostprocess!(Val(w), workspace)
 end
 
-function postprocess!(workspace)
-    postprocess!(Val(:rect), workspace)
+function zdtpostprocess!(workspace)
+    zdtpostprocess!(Val(:rect), workspace)
 end
 
 """
-    output!(dest, workspace) -> dest
+    zdtoutput!(dest, workspace) -> dest
 
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.
 """
-function output!(dest, workspace)
+function zdtoutput!(dest, workspace)
     # Backwards FFT `workspace.Ys` into `dest`
     mul!(dest, workspace.irfft_plan, workspace.Ys)
 end
@@ -357,8 +357,8 @@ end
 """
     zdtfdr!([w,] [dest,] workspace[, spectrogram]; r0=workspace.r0)
 
-If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
-algorithm as specified in `workspace`.  If `dest` is given, `output!` frequency
+If `spectrogram` is given, `zdtinput!` it into `workspace.F`.  Perform the ZDT
+algorithm as specified in `workspace`.  If `dest` is given, `zdtoutput!` frequency
 drift rate matrix into `dest` and return `dest`, otherwise return `nothing`.  An
 alternate `r0` may be given to override `workspace.r0`.  `dest` and `r0` may
 also be iterators to compute multiple ZDTs from the same input for different r0
@@ -373,14 +373,14 @@ window function, see the extended help of [`postphase`](@ref).
 """
 function zdtfdr!(w::Union{Function,Symbol,Val}, dests, workspace, spectrogram=nothing; r0=workspace.r0)
     if spectrogram !== nothing
-        input!(workspace, spectrogram)
+        zdtinput!(workspace, spectrogram)
     end
 
     for (dest, rate) in zip(dests, Iterators.cycle(r0))
-        preprocess!(workspace, rate)
-        convolve!(workspace)
-        postprocess!(w, workspace)
-        output!(dest, workspace)
+        zdtpreprocess!(workspace, rate)
+        zdtconvolve!(workspace)
+        zdtpostprocess!(w, workspace)
+        zdtoutput!(dest, workspace)
     end
 
     return dests
@@ -406,12 +406,12 @@ end
 
 function zdtfdr!(w::Union{Function,Symbol,Val}, workspace::ZDTWorkspace, spectrogram=nothing; r0::Real=workspace.r0)
     if spectrogram !== nothing
-        input!(workspace, spectrogram)
+        zdtinput!(workspace, spectrogram)
     end
 
-    preprocess!(workspace, r0)
-    convolve!(workspace)
-    postprocess!(w, workspace)
+    zdtpreprocess!(workspace, r0)
+    zdtconvolve!(workspace)
+    zdtpostprocess!(w, workspace)
 
     return nothing
 end
@@ -423,8 +423,8 @@ end
 """
     zdtfdr([w,] workspace[, spectrogram]; r0=workspace.r0)
 
-If `spectrogram` is given, `input!` it into `workspace.F`.  Perform the ZDT
-algorithm as specified in `workspace`, `output!` frequency drift rate matrix to
+If `spectrogram` is given, `zdtinput!` it into `workspace.F`.  Perform the ZDT
+algorithm as specified in `workspace`, `zdtoutput!` frequency drift rate matrix to
 a newly allocated `Matrix` and return it.  An alternate `r0` may be given to
 override `workspace.r0`.
 
@@ -463,4 +463,59 @@ end
 function zdtfdr(w::Union{Function,Symbol,Val}, spectrogram::AbstractMatrix{<:Real},
                 rates::AbstractRange, factors=(2, 3, 5); output_aligned=false)
     zdtfdr(w, ZDTWorkspace(spectrogram, rates, factors; output_aligned=output_aligned))
+end
+
+# Deprecated aliases of the generic ZDT pipeline stage names, which are too
+# collision-prone to export unqualified.
+
+"""
+    input!(workspace, spectrogram)
+
+Deprecated alias of [`zdtinput!`](@ref).
+"""
+function input!(args...; kwargs...)
+    Base.depwarn("`input!` is deprecated, use `zdtinput!`", :input!)
+    zdtinput!(args...; kwargs...)
+end
+
+"""
+    output!(dest, workspace)
+
+Deprecated alias of [`zdtoutput!`](@ref).
+"""
+function output!(args...; kwargs...)
+    Base.depwarn("`output!` is deprecated, use `zdtoutput!`", :output!)
+    zdtoutput!(args...; kwargs...)
+end
+
+"""
+    preprocess!(workspace[, r0])
+
+Deprecated alias of [`zdtpreprocess!`](@ref).
+"""
+function preprocess!(args...; kwargs...)
+    Base.depwarn("`preprocess!` is deprecated, use `zdtpreprocess!`",
+                 :preprocess!)
+    zdtpreprocess!(args...; kwargs...)
+end
+
+"""
+    convolve!(workspace)
+
+Deprecated alias of [`zdtconvolve!`](@ref).
+"""
+function convolve!(args...; kwargs...)
+    Base.depwarn("`convolve!` is deprecated, use `zdtconvolve!`", :convolve!)
+    zdtconvolve!(args...; kwargs...)
+end
+
+"""
+    postprocess!([w,] workspace)
+
+Deprecated alias of [`zdtpostprocess!`](@ref).
+"""
+function postprocess!(args...; kwargs...)
+    Base.depwarn("`postprocess!` is deprecated, use `zdtpostprocess!`",
+                 :postprocess!)
+    zdtpostprocess!(args...; kwargs...)
 end

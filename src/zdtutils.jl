@@ -19,18 +19,22 @@ function growNr(Nt::Integer, Nr::Integer, factors::Union{Tuple,AbstractVector}=(
 end
 
 """
-    estimate_memory(Nf, Nt, Nr, Ni=1, No=1; factors=(2,3,5))
+    estimate_memory(Nf, Nt, Nr, Ni=1, No=1; factors=(2, 3, 5))
 
-Estimate the number of bytes required on the GPU for the given parameters:
+Estimate the number of bytes required for a ZDT drift rate search with the
+given parameters, assuming `Float32` array elements:
 - `Nf`: The number of frequency channels in the input spectrogram
 - `Nt`: The number of time samples in the input spectrogram
 - `Nr`: The number of drift rates to search (per batch)
-- `Ni`: The number of input buffers (outside ZDTWorkspace)
-- `No`: The number of output buffers (outside ZDTWorkspace)
+- `Ni`: The number of spectrogram-sized input buffers outside the workspace
+- `No`: The number of FDR-matrix-sized output buffers outside the workspace
 - `factors`: Assume FFT sizes are restricted to products of `factors` (see
-  `calcNl()` for more details)
-This function may be more accurate for GPU memory estimates than CPU memory
-estimates.
+  [`calcNl`](@ref))
+
+The estimate covers the [`ZDTWorkspace`](@ref) buffers (including FFT work
+areas) plus the `Ni` input and `No` output buffers.  It is intended for
+planning memory-constrained (e.g. GPU) searches and may be more accurate for
+GPU memory than for CPU memory, but it applies wherever the arrays reside.
 """
 function estimate_memory(Nf, Nt, Nr, Ni=1, No=1;
                          factors::Union{Tuple,AbstractVector}=(2,3,5))

@@ -1,4 +1,5 @@
 using FrequencyDriftRateTransforms
+using FrequencyDriftRateTransforms: taylorstep!
 using Test
 using Statistics
 using DataDeps
