@@ -125,16 +125,17 @@ include("taylorreference.jl")
         fdr1 = taylorfdr(spec, 1)  # every column is all zero
         m, s = fdrstats(fdr)
         @test 0 < s < Inf
-        @test fdrstats([fdr, fdr1]) == (m, s)
+        @test fdrstats(fdr).std == s  # named access
+        @test fdrstats([fdr, fdr1]) == (mean = m, std = s)
         @test all(isfinite, fdrnormalize!(fdr))
 
-        @test fdrstats(fdr1) == (0.0f0, Inf)
+        @test fdrstats(fdr1) == (mean = 0.0f0, std = Inf)
         @test fdrnormalize!(fdr1) == zeros(37, 64)
         @test fdrdenormalize(5.0, fdr1) == Inf
         @test isempty(findprotohits(fdr1, 5.0; snr=true))
 
         # Iterable-of-matrices variants
-        @test fdrstats([fdr1]) == (0.0f0, Inf)
+        @test fdrstats([fdr1]) == (mean = 0.0f0, std = Inf)
         fdrs = [copy(fdr1), copy(fdr)]
         fdrnormalize!(fdrs)
         @test all(isfinite, fdrs[1]) && all(isfinite, fdrs[2])
@@ -148,8 +149,8 @@ include("taylorreference.jl")
         m2, s2 = fdrstats(hand)
         @test m2 == 2.5f0
         @test s2 ≈ std(1.0f0:4.0f0)
-        @test fdrstats([copy(fdr1), taylorfdr(spec, 0)]) == (m, s)
-        @test fdrstats(fill(3.0f0, 4, 8)) == (3.0f0, Inf)
+        @test fdrstats([copy(fdr1), taylorfdr(spec, 0)]) == (mean = m, std = s)
+        @test fdrstats(fill(3.0f0, 4, 8)) == (mean = 3.0f0, std = Inf)
     end
 
     @testset "taylorstep!" begin
@@ -372,7 +373,7 @@ include("taylorreference.jl")
 
             @testset "fdrstats [CUDA]" begin
                 gz = CuArray(zeros(Float32, 4, 4))
-                @test fdrstats(gz) == (0.0f0, Inf)
+                @test fdrstats(gz) == (mean = 0.0f0, std = Inf)
                 m, s = fdrstats(CuArray(d2))
                 @test 0 < s < Inf
             end

@@ -26,8 +26,8 @@ function create_fdr(spectrogram, rates)
 end
 
 """
-    fdrstats(fdr) -> (mean, std)
-    fdrstats(fdrs) -> (mean, std)
+    fdrstats(fdr) -> (mean = ..., std = ...)
+    fdrstats(fdrs) -> (mean = ..., std = ...)
 
 Compute the mean and standard deviation of the Frequency-Drift-Rate (FDR) Matrix
 `fdr` or matrices `fdrs`.  The mean is calculated as the mean of the first
@@ -40,21 +40,24 @@ all-zero columns produced for out-of-band drift blocks by `taylorfdr`) are
 ignored; if all columns have a standard deviation of zero, the standard
 deviation is `Inf`, so that normalizing by it produces zeros and denormalizing
 with it produces an `Inf` threshold (i.e. no hits).
+
+The returned values are a `NamedTuple` with fields `mean` and `std`, so both
+`m, s = fdrstats(fdr)` and `fdrstats(fdr).std` work.
 """
 function fdrstats(fdr::AbstractMatrix)
     stds = vec(std(fdr, dims=1))
     s = minimum(filter(>(0), stds); init=Inf)
     i = findfirst(>(0), stds)
     m = i === nothing ? mean(@view fdr[:, 1]) : mean(@view fdr[:, i])
-    (m, s)
+    (mean = m, std = s)
 end
 
 function fdrstats(fdrs)
     stats = [fdrstats(fdr) for fdr in fdrs]
-    s = minimum(st[2] for st in stats; init=Inf)
-    i = findfirst(st -> st[2] < Inf, stats)
-    m = i === nothing ? first(stats)[1] : stats[i][1]
-    (m, s)
+    s = minimum(st.std for st in stats; init=Inf)
+    i = findfirst(st -> st.std < Inf, stats)
+    m = i === nothing ? first(stats).mean : stats[i].mean
+    (mean = m, std = s)
 end
 
 """
