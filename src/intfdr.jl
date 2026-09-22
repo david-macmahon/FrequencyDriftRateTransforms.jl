@@ -1,29 +1,29 @@
 """
-    intshift!(dout, din, rate) -> dout
+    intshift!(dest, src, rate) -> dest
 
-Circularly shift each column of `din` by an amount proportional to `rate` and
-store the results in `dout`.  The first column is un-shifted (i.e. shifted 0).
+Circularly shift each column of `src` by an amount proportional to `rate` and
+store the results in `dest`.  The first column is un-shifted (i.e. shifted 0).
 """
-function intshift!(dout, din, rate)
-    size(din) == size(dout) ||
-        throw(ArgumentError("din and dout must have the same size (got $(size(din)) and $(size(dout)))"))
-    for (i, (cin, cout)) in enumerate(zip(eachcol(din), eachcol(dout)))
+function intshift!(dest, src, rate)
+    size(dest) == size(src) ||
+        throw(ArgumentError("dest and src must have the same size (got $(size(dest)) and $(size(src)))"))
+    for (i, (cin, cout)) in enumerate(zip(eachcol(src), eachcol(dest)))
         n = round(rate*(i-1))
         circshift!(cout, cin, -n)
     end
-    return dout
+    return dest
 end
 
 """
-    intshift(din, rate) -> dout
+    intshift(src, rate) -> dest
 
-Circularly shift each column of `din` by an amount proportional to `rate` and
-return the results in a new Matrix similar to `din`.  The first column is
+Circularly shift each column of `src` by an amount proportional to `rate` and
+return the results in a new Matrix similar to `src`.  The first column is
 un-shifted (i.e. shifted 0).
 """
-function intshift(din, rate)
-    dout = similar(din)
-    intshift!(dout, din, rate)
+function intshift(src, rate)
+    dest = similar(src)
+    intshift!(dest, src, rate)
 end
 
 """

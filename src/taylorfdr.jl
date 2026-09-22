@@ -273,6 +273,18 @@ function Base.sizeof(ws::TaylorWorkspace)
 end
 
 """
+    taylortree!(workspace, spectrogram, drift_block) -> result
+
+Same as `taylortree!(buffer1, buffer2, spectrogram, drift_block)`, but the
+ping-pong work buffers are taken from the given `TaylorWorkspace` (i.e.
+`workspace.buffer1` and `workspace.buffer2`).
+"""
+function taylortree!(workspace::TaylorWorkspace,
+                     spectrogram::AbstractMatrix{<:Real}, drift_block::Integer)
+    taylortree!(workspace.buffer1, workspace.buffer2, spectrogram, drift_block)
+end
+
+"""
     taylorfdr!(fdr, spectrogram, drift_blocks) -> fdr
     taylorfdr!(fdr, workspace, spectrogram, drift_blocks) -> fdr
 

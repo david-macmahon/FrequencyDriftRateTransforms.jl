@@ -1,7 +1,7 @@
 using Statistics
 
 """
-    create_fdr(spectrogram, Nr::Integer)
+    create_fdr(spectrogram, Nr::Integer) -> Matrix
 
 Create an uninitialized `Matrix` suitable for use with `intfdr!`, `fftfdr!`, or
 `zdtfdr!` and the given `spectrogram` and `Nr` (number of rates).  The returned
@@ -14,7 +14,7 @@ function create_fdr(spectrogram, Nr::Integer)
 end
 
 """
-    create_fdr(spectrogram, rates)
+    create_fdr(spectrogram, rates) -> Matrix
 
 Create an uninitialized `Matrix` suitable for use with `intfdr!`, `fftfdr!`, or
 `zdtfdr!` and the given `spectrogram` and `rates`.  The returned `Matrix` will

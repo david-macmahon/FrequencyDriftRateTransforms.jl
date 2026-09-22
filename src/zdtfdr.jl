@@ -215,17 +215,18 @@ function prephase(kl::CartesianIndex, r0::Float32, δr::Float32, Nf::Integer)
 end
 
 """
-    zdtinput!(workspace, spectrogram)
+    zdtinput!(workspace, spectrogram) -> workspace
 
 Input FFT of `spectrogram` into `workspace.F`.
 """
 function zdtinput!(workspace, spectrogram)
     # FFT `spectrogram` into `workspace.F`
     mul!(workspace.F, workspace.rfft_plan, spectrogram)
+    return workspace
 end
 
 """
-    zdtpreprocess!(workspace, r0=workspace.r0)
+    zdtpreprocess!(workspace[, r0]) -> workspace
 
 Multiply `workspace.F` by `prephase` as per the parameters in `workspace`,
 storing results in `workspace.Yf`, then zero-pad the rest of `workspace.Y`.
@@ -245,6 +246,7 @@ function zdtpreprocess!(workspace, r0::Float32=workspace.r0)
     # Zero-pad the rest of `Y`
     # TODO: Add Yz field to ZDTWorkspace for this view?
     fill!(@view(Y[:, Nt+1:end]), zero(eltype(Y)))
+    return workspace
 end
 
 function zdtpreprocess!(workspace, r0::Real)
@@ -252,7 +254,7 @@ function zdtpreprocess!(workspace, r0::Real)
 end
 
 """
-    zdtconvolve!(workspace)
+    zdtconvolve!(workspace) -> workspace
 
 Perform CZT convolution step for data in `workspace` by doing:
 1. In-place FFT `workspace.Y`
@@ -263,6 +265,7 @@ function zdtconvolve!(workspace)
     mul!(workspace.Y, workspace.fft_plan, workspace.Y)
     workspace.Y .*= workspace.V
     mul!(workspace.Y, workspace.ifft_plan, workspace.Y)
+    return workspace
 end
 
 """
@@ -307,7 +310,7 @@ function postphase(kl::CartesianIndex, δr::Float32, Nf::Integer)
 end
 
 """
-    zdtpostprocess!([w,] workspace)
+    zdtpostprocess!([w,] workspace) -> workspace
 
 Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
 
@@ -322,6 +325,7 @@ function zdtpostprocess!(w::Function, workspace)
     # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
     workspace.Ys .*= postphase.(w, CartesianIndices(workspace.Ys),
                                 workspace.δr, workspace.Nf)
+    return workspace
 end
 
 function zdtpostprocess!(::Val{:hamming}, workspace)

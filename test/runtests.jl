@@ -102,6 +102,9 @@ include("taylorreference.jl")
             @test fdr2 == tf
         end
 
+        # taylortree! with a TaylorWorkspace
+        @test taylortree!(TaylorWorkspace(d2), d2, 0) == taylorfdr(d2, 0)
+
         # Columns are grouped by drift block in the given order
         tf3 = taylorfdr(d2, -1:1)
         @test size(tf3) == (Nf, 3Nt)

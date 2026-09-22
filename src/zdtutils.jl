@@ -19,7 +19,7 @@ function growNr(Nt::Integer, Nr::Integer, factors::Union{Tuple,AbstractVector}=(
 end
 
 """
-    estimate_memory(Nf, Nt, Nr, Ni=1, No=1; factors=(2, 3, 5))
+    estimate_memory(Nf, Nt, Nr, Ni=1, No=1; factors=(2, 3, 5)) -> Int
 
 Estimate the number of bytes required for a ZDT drift rate search with the
 given parameters, assuming `Float32` array elements:
