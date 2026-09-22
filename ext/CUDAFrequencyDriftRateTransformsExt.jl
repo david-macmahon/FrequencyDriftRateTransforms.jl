@@ -5,16 +5,18 @@ import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, output!,
 
 if isdefined(Base, :get_extension)
     import FFTW
-    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, synchronize, @cuda,
-                blockIdx, threadIdx, blockDim
+    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuStaticSharedArray,
+                synchronize, @cuda, blockIdx, threadIdx, blockDim,
+                sync_threads
     using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
     import ..FFTW
-    import ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, synchronize, @cuda,
-                   blockIdx, threadIdx, blockDim
+    import ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuStaticSharedArray,
+                   synchronize, @cuda, blockIdx, threadIdx, blockDim,
+                   sync_threads
     using ..CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
@@ -105,20 +107,34 @@ function output!(dest::CuMatrix{<:Real}, workspace)
     return dest
 end
 
-# Taylor tree kernels.  Unlike the CPU implementation in src/taylorfdr.jl,
-# which uses virtual zero padding (never storing or computing on the
-# padding), the GPU implementation materializes the zero padding of the
-# spectrogram to Ntp = nextpow(2, Nt) time samples so that the kernels can
-# assume power-of-2 sizes with no special casing for padding (as in the
-# seticore reference implementation).  The results are identical to the
-# CPU implementation.
+# Taylor tree kernels.  The tiled kernel (following the tiled Taylor tree
+# in seticore's taylor.cu) stages 32 timesteps x 128 channels of the
+# spectrogram in shared memory and runs the path length 2..32 rounds there;
+# each block computes 96 output channels (tiles overlap by 32 channels so
+# that paths of 32 steps stay within the tile), with TILE_THREADS threads
+# per channel splitting the per-channel work.  The drift block's integer
+# drift is applied when loading the tile (timestep t is read drift_block*t
+# channels up), so the in-tile rounds run with zero drift, and entries that
+# fall outside the spectrogram (in frequency, or in time, i.e. the zero
+# padding) are loaded as zeros.  For Ntp >= 64 the per-entry kernel handles
+# the remaining rounds in global memory; for smaller Ntp the tiled kernel
+# runs the whole tree.  The final round of each tree zero-fills the entries
+# for paths that extend beyond the frequency band (earlier rounds skip
+# them, since they are never read), so no separate wedge-zeroing pass is
+# needed.  The results are identical to the CPU implementation in
+# src/taylorfdr.jl.
+
+const TILE_WIDTH = 128        # shared channels per tile
+const TILE_BLOCK_WIDTH = 96   # output channels per block
+const TILE_TIMESTEPS = 32     # shared timesteps per tile
+const TILE_THREADS = 2        # threadIdx.y threads splitting per-channel work
 
 """
     taylortree!(buffer1, buffer2, spectrogram::CuMatrix, drift_block) -> result
 
-CUDA implementation of `taylortree!` that materializes the zero padding of
-`spectrogram` to `Ntp = nextpow(2, Nt)` time samples and uses a CUDA kernel
-(one thread per output entry) for each Taylor tree step.
+CUDA implementation of `taylortree!` using a tiled shared-memory kernel
+(following seticore's tiled Taylor tree) for the path length 2..32 rounds
+and a per-entry kernel for any remaining rounds.
 """
 function taylortree!(buffer1::CuMatrix, buffer2::CuMatrix,
                      spectrogram::CuMatrix{<:Real}, drift_block::Integer)
@@ -134,33 +150,131 @@ function taylortree!(buffer1::CuMatrix, buffer2::CuMatrix,
     (spectrogram === buffer1 || spectrogram === buffer2) &&
         throw(ArgumentError("spectrogram must be distinct from buffer1 and buffer2"))
     Nt >= 2 || throw(ArgumentError("number of time samples ($Nt) must be at least 2"))
-    # Materialize the zero padding in buffer1
-    copyto!(view(buffer1, :, 1:Nt), spectrogram)
-    Nt < Ntp && fill!(view(buffer1, :, Nt+1:Ntp), zero(eltype(buffer1)))
-    # Run all rounds of the tree: buffer1 -> buffer2 -> buffer1 -> ...
-    source_buffer, target_buffer = buffer1, buffer2
-    L = 2
-    threads = min(Nf, 256)
-    blockrows = cld(Nf, threads)
-    while L <= Ntp
-        @cuda blocks=(Ntp, blockrows) threads=threads taylor_round_kernel!(
-            target_buffer, source_buffer, Nf, Ntp, L, drift_block)
-        source_buffer, target_buffer = target_buffer, source_buffer
-        L *= 2
+    if Ntp >= 2 * TILE_TIMESTEPS
+        # Stage 1: tiled kernel computes the path length 2..32 rounds,
+        # writing the results to buffer1
+        blocks = (cld(Nf, TILE_BLOCK_WIDTH), Ntp ÷ TILE_TIMESTEPS)
+        @cuda blocks=blocks threads=(TILE_WIDTH, TILE_THREADS) taylor_tiled_kernel!(
+            buffer1, spectrogram, Nf, Nt, Ntp, drift_block, false)
+        # Stage 2: per-entry rounds for path lengths 64..Ntp:
+        # buffer1 -> buffer2 -> buffer1 -> ...
+        source_buffer, target_buffer = buffer1, buffer2
+        L = 2 * TILE_TIMESTEPS
+        threads = min(Nf, 256)
+        blockrows = cld(Nf, threads)
+        while L <= Ntp
+            # The final round zero-fills the entries for paths that extend
+            # beyond the frequency band (earlier rounds skip them; they are
+            # never read, and the final round fully overwrites its target)
+            @cuda blocks=(Ntp, blockrows) threads=threads taylor_round_kernel!(
+                target_buffer, source_buffer, Nf, Ntp, L, drift_block, L == Ntp)
+            source_buffer, target_buffer = target_buffer, source_buffer
+            L *= 2
+        end
+    else
+        # The tiled kernel runs the whole tree (path lengths 2..Ntp)
+        @cuda blocks=(cld(Nf, TILE_BLOCK_WIDTH), 1) threads=(TILE_WIDTH, TILE_THREADS) taylor_tiled_kernel!(
+            buffer1, spectrogram, Nf, Nt, Ntp, drift_block, true)
+        source_buffer = buffer1
     end
-    # Zero the entries of the final result for paths that extend beyond the
-    # frequency band; they were never written by the rounds above.
-    @cuda blocks=cld(Ntp, 256) threads=256 taylor_zero_wedge_kernel!(
-        source_buffer, Nf, Ntp, drift_block)
     return source_buffer
+end
+
+# One in-tile Taylor tree step; thread (s, ty) of TILE_WIDTH x TILE_THREADS
+# threads computes the entries for shared-memory channel `s` and the time
+# blocks ty-1, ty-1+TILE_THREADS, ... (a zero-drift variant of taylorstep!
+# in src/taylorfdr.jl).  Entries whose reads would fall outside the tile are
+# not written; as in the parent implementation, such entries are never read
+# by subsequent steps.
+function taylor_shared_step!(dst::CuDeviceMatrix{T}, src::CuDeviceMatrix{T},
+                             s::Int, ty::Int, nty::Int, L::Int) where T
+    half = L ÷ 2
+    for tb in (ty - 1):nty:(TILE_TIMESTEPS ÷ L - 1), p in 0:(L - 1)
+        half_offset = p >> 1
+        shift = (p + 1) >> 1
+        if s + shift <= TILE_WIDTH && s + p <= TILE_WIDTH
+            @inbounds dst[s, tb*L + p + 1] =
+                src[s, tb*L + half_offset + 1] +
+                src[s + shift, tb*L + half_offset + half + 1]
+        end
+    end
+    return
+end
+
+# Tiled kernel: stages a TILE_TIMESTEPS x TILE_WIDTH tile of the (drift
+# shifted) spectrogram in shared memory and runs the path length 2..Lmax
+# rounds there, where Lmax = min(Ntp, TILE_TIMESTEPS).  Each block computes
+# the TILE_BLOCK_WIDTH output channels starting at
+# (blockIdx().x - 1) * TILE_BLOCK_WIDTH; the final round writes global
+# memory directly.  For Ntp >= 2 * TILE_TIMESTEPS the output holds the
+# path length TILE_TIMESTEPS sums for the remaining rounds (one tile time
+# block per blockIdx().y); for smaller Ntp it holds the complete result,
+# with `zerofill` writing zeros for paths that extend beyond the band.
+function taylor_tiled_kernel!(output::CuDeviceMatrix{T}, input::CuDeviceMatrix{T},
+                              Nf::Int, Nt::Int, Ntp::Int, drift_block::Int,
+                              zerofill::Bool) where T
+    sh1 = CuStaticSharedArray(T, (TILE_WIDTH, TILE_TIMESTEPS))
+    sh2 = CuStaticSharedArray(T, (TILE_WIDTH, TILE_TIMESTEPS))
+    block_start = (blockIdx().x - 1) * TILE_BLOCK_WIDTH
+    time_offset = (blockIdx().y - 1) * TILE_TIMESTEPS
+    s = Int(threadIdx().x)
+    ty = Int(threadIdx().y)
+    nty = Int(blockDim().y)
+    # Load the drift-shifted tile into shared memory, zeroing entries that
+    # fall outside the spectrogram (in frequency or in time)
+    for t in (ty - 1):nty:(TILE_TIMESTEPS - 1)
+        g0 = block_start + (s - 1) + drift_block * t
+        if time_offset + t < Nt && 0 <= g0 < Nf
+            @inbounds sh1[s, t + 1] = input[g0 + 1, time_offset + t + 1]
+        else
+            @inbounds sh1[s, t + 1] = zero(T)
+        end
+    end
+    sync_threads()
+    # In-tile rounds (zero drift; the drift block was applied at load time)
+    src, dst = sh1, sh2
+    Lmax = min(Ntp, TILE_TIMESTEPS)
+    L = 2
+    while L < Lmax
+        taylor_shared_step!(dst, src, s, ty, nty, L)
+        src, dst = dst, src
+        L *= 2
+        sync_threads()
+    end
+    # Final round reads shared memory and writes global memory.  Entries
+    # for the last TILE_WIDTH - TILE_BLOCK_WIDTH shared channels duplicate
+    # the next block's output (identical values, benign writes).  With
+    # `zerofill`, entries for paths extending beyond the band (endpoint
+    # gchan + drift_block*(Lmax-1) + p outside 1:Nf) are written as zeros.
+    gchan = block_start + s  # 1-based global channel for this thread
+    if gchan <= Nf
+        half = Lmax ÷ 2
+        for p in 0:(Lmax - 1)
+            half_offset = p >> 1
+            shift = (p + 1) >> 1
+            if s + shift <= TILE_WIDTH && s + p <= TILE_WIDTH
+                inband = 1 <= gchan + drift_block * (Lmax - 1) + p <= Nf
+                if inband || zerofill
+                    @inbounds output[gchan, time_offset + p + 1] =
+                        inband ? src[s, half_offset + 1] +
+                                 src[s + shift, half_offset + half + 1] : zero(T)
+                end
+            end
+        end
+    end
+    return
 end
 
 # One round of the Taylor tree; one thread per output entry of the round
 # (a power-of-2 padded variant of taylorstep! in src/taylorfdr.jl).
 # blockIdx.x selects the target column, threadIdx.x selects the frequency
 # channel so that consecutive threads access consecutive memory addresses.
+# With `zerofill`, entries for paths that extend beyond the frequency band
+# are written as zeros instead of being skipped (used for the final round,
+# which fully overwrites its target, so no wedge-zeroing pass is needed).
 function taylor_round_kernel!(target::CuDeviceMatrix{T}, source::CuDeviceMatrix{T},
-                              Nf::Int, Ntp::Int, L::Int, drift_block::Int) where T
+                              Nf::Int, Ntp::Int, L::Int, drift_block::Int,
+                              zerofill::Bool) where T
     tcol = blockIdx().x
     chan = (blockIdx().y - 1) * blockDim().x + threadIdx().x
     chan > Nf && return
@@ -175,23 +289,8 @@ function taylor_round_kernel!(target::CuDeviceMatrix{T}, source::CuDeviceMatrix{
         @inbounds target[chan, tcol] =
             source[chan, tb*L + half_offset + 1] +
             source[chan + shift, tb*L + half_offset + half + 1]
-    end
-    return
-end
-
-# Zero the out-of-band wedge of a taylortree! result; one thread per column.
-function taylor_zero_wedge_kernel!(buffer::CuDeviceMatrix{T},
-                                   Nf::Int, Ntp::Int, drift_block::Int) where T
-    col = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    col > Ntp && return
-    drift_channels = (Ntp - 1) * drift_block + col - 1
-    chan_lo = max(1, 1 - drift_channels)
-    chan_hi = min(Nf, Nf - drift_channels)
-    for chan in 1:(chan_lo - 1)
-        @inbounds buffer[chan, col] = zero(T)
-    end
-    for chan in (chan_hi + 1):Nf
-        @inbounds buffer[chan, col] = zero(T)
+    elseif zerofill
+        @inbounds target[chan, tcol] = zero(T)
     end
     return
 end

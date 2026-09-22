@@ -7,10 +7,12 @@
 # based on Franklin Antonio's CudaTaylor5demo.cu from
 # https://github.com/UCBerkeleySETI/dedopplerperf.
 #
-# The implementation uses only whole-array operations (broadcasts and fill!),
-# so it works transparently (though not optimally) on GPU arrays such as
-# CuArray; a dedicated CUDA kernel (as in the seticore reference) would be
-# considerably faster.
+# The CPU implementation below uses only whole-array operations (broadcasts
+# and fill!).  When CUDA is loaded and the arrays are CuArrays, the CUDA
+# extension overrides taylortree! with dedicated kernels (a tiled
+# shared-memory kernel for the short-path rounds and a per-entry kernel for
+# the remaining rounds), which are considerably faster than running this
+# implementation on GPU arrays.
 
 """
     taylorstep!(target, source, path_length, drift_block[, Nt]) -> target
@@ -145,9 +147,9 @@ written, and must be distinct from both buffers.  The buffers must be
 distinct from each other and both have size
 `(size(spectrogram, 1), Ntp)` where `Ntp = nextpow(2, Nt)` and `Nt` is the
 number of time samples in `spectrogram` (at least 2).  When CUDA is loaded
-and the arrays are `CuArray`s, a CUDA kernel implementation of the tree is
-used; it materializes the zero padding described in the extended help
-instead of virtualizing it (the results are identical).
+and the arrays are `CuArray`s, CUDA kernels are used: a tiled shared-memory
+kernel for the short-path rounds and a per-entry kernel for any remaining
+rounds (the results are identical).
 
 # Extended help
 

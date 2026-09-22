@@ -332,10 +332,18 @@ include("taylorreference.jl")
                 taylorfdr!(gout, TaylorWorkspace(g), g, 0)
                 @test Array(gout) == taylorfdr(d2, 0)
                 @test Array(taylorfdr(g, -1:1)) == taylorfdr(d2, -1:1)
-                # Non-power-of-2 time samples (the GPU materializes the
-                # zero padding and the CPU virtualizes it; results match)
+                # Non-power-of-2 time samples (the GPU zeroes the padding
+                # when loading its tiles; the CPU virtualizes it entirely)
                 gs = CuArray(d3[:, 1:5])
                 @test Array(taylorfdr(gs, 0)) == taylorfdr(d3[:, 1:5], 0)
+                # Sweep over Nt to cover the tiled kernel alone (Ntp <= 32,
+                # including Ntp == 2), the two-stage path (Ntp >= 64), and
+                # partial final time blocks
+                for Nt2 in (2, 3, 5, 8, 16, 32, 63, 64, 65, 100)
+                    spec = randn(Float32, 64, Nt2)
+                    @test Array(taylorfdr(CuArray(spec), -1:1)) ==
+                          taylorfdr(spec, -1:1)
+                end
                 # Larger random cases, multiple drift blocks, pow2 and not
                 spec = randn(Float32, 128, 64)
                 gc = CuArray(spec)
