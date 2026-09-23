@@ -26,8 +26,8 @@ function create_fdr(spectrogram, rates)
 end
 
 """
-    fdrstats(fdr) -> (mean = ..., std = ...)
-    fdrstats(fdrs) -> (mean = ..., std = ...)
+    fdrstats(fdr; robust=false, k=nothing, qlo=0.1) -> (mean = ..., std = ...)
+    fdrstats(fdrs; robust=false, k=nothing, qlo=0.1) -> (mean = ..., std = ...)
 
 Compute the mean and standard deviation of the Frequency-Drift-Rate (FDR) Matrix
 `fdr` or matrices `fdrs`.  The mean is calculated as the mean of the first
@@ -41,10 +41,21 @@ ignored; if all columns have a standard deviation of zero, the standard
 deviation is `Inf`, so that normalizing by it produces zeros and denormalizing
 with it produces an `Inf` threshold (i.e. no hits).
 
+If `robust` is true, the mean and standard deviation are instead estimated
+with [`noisefloor`](@ref), which is robust to signal contamination (see its
+docstring).  The optional `k` keyword (per-polarization Gamma shape) is
+passed through to `noisefloor` and improves the accuracy of the standard
+deviation estimate when the integration factor of the data is known.  The
+`qlo`, `clip`, and `refine` keywords of `noisefloor` are also passed
+through.
+
 The returned values are a `NamedTuple` with fields `mean` and `std`, so both
 `m, s = fdrstats(fdr)` and `fdrstats(fdr).std` work.
 """
-function fdrstats(fdr::AbstractMatrix)
+function fdrstats(fdr::AbstractMatrix; robust::Bool=false, kwargs...)
+    if robust
+        return _noisefloor_stats(fdr; kwargs...)
+    end
     stds = vec(std(fdr, dims=1))
     s = minimum(filter(>(0), stds); init=Inf)
     i = findfirst(>(0), stds)
@@ -52,8 +63,8 @@ function fdrstats(fdr::AbstractMatrix)
     (mean = m, std = s)
 end
 
-function fdrstats(fdrs)
-    stats = [fdrstats(fdr) for fdr in fdrs]
+function fdrstats(fdrs; robust::Bool=false, kwargs...)
+    stats = [fdrstats(fdr; robust, kwargs...) for fdr in fdrs]
     s = minimum(st.std for st in stats; init=Inf)
     i = findfirst(st -> st.std < Inf, stats)
     m = i === nothing ? first(stats).mean : stats[i].mean

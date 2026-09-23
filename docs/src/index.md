@@ -153,3 +153,109 @@ Note the use of `fdrdenormalize` to denormalize the SNR threshold (5 sigma
 here) rather than normalizing the whole FDR matrix via `fdrnormalize!`; for
 searching, denormalizing the single threshold value is more efficient (see
 [`fdrdenormalize`](@ref)).
+
+## Noise floor estimation
+
+The mean and standard deviation used for thresholding (see [`fdrstats`](@ref))
+are plain statistics, so a single bright signal inflates them and raises every
+threshold.  The [`noisefloor`](@ref) function estimates the noise floor power
+robustly instead: it models the data as the sum of two independent Gamma
+distributed polarizations (the natural distribution of integrated power
+samples) and anchors the estimate on signal-free quantiles (the `qlo`
+quantile, 10% by default, and the median).  The estimated mean stays within a
+few percent of the true noise floor even at contamination fractions of order
+15% (where it biases high by ~3%), while the plain mean is already badly
+biased at a 1% contamination fraction.  Pass `robust = true` to `fdrstats` to
+use it for thresholding:
+
+```julia
+m, s = fdrstats(fdr; robust = true, k = k * Nt)
+hijs = findprotohits(fdr, fdrdenormalize(5.0, m, s))
+```
+
+When `k` is known, `noisefloor` also reports the per-polarization mean powers
+(`pol1`, `pol2`, `polratio`); without it, only the effective shape of the
+summed polarizations is estimated.  See [`noisefloor`](@ref) for the full
+description.
+
+### The `k` convention
+
+`k` is the per-polarization Gamma *shape* of a single data sample, and that
+is always the value to pass, regardless of how many polarizations are
+summed into the data (the two-polarization sum is part of the model, not
+the `k` value).  A spectrometer output sample is the sum of `n_accum`
+accumulated FFT frames, and each frame's `real^2 + imag^2` power
+contributes 2 degrees of freedom (i.e. Gamma shape 1) per polarization, so
+for filterbank power data
+
+```julia
+k = n_accum = abs(foff) * tsamp   # foff in Hz, tsamp in s
+```
+
+and for a Frequency-Drift-Rate matrix produced from `Nt` path-summed time
+samples, `k = n_accum * Nt`.  The number of summed polarizations does *not*
+enter `k`; it only shows up in the *reported* effective `shape`, which is
+`k` when one polarization dominates and approaches `2k` for a balanced
+Stokes I sum.  Genuinely single-polarization data needs no special
+treatment either: it is the limit where one polarization's mean power is
+zero, for which the estimate is exact and the split reports `pol1 ≈ mean`
+and `pol2 ≈ 0`.
+
+As a concrete instance, the Breakthrough Listen Voyager 2020 single coarse
+channel file has `foff = 2.794 Hz` and `tsamp = 18.2536 s`, so
+`n_accum = 51` and `2e6 * abs(foff[MHz]) * tsamp = 102`; pass `k = 51` for
+the spectrogram and `k = 51 * 16 = 816` for its FDR matrices, whether using
+single-polarization or Stokes I data.
+
+### Per-polarization split accuracy
+
+The split is computed from the estimated moments via
+`(θ1 - θ2)² = 2·std²/k - (mean/k)²`, so its accuracy is limited by the
+standard deviation estimate and degrades steeply toward balanced
+polarizations (a small difference of large quantities).  The table below
+gives the approximate number of samples required for the
+larger-polarization fraction to be accurate to within the stated number of
+percentage points (RMS; Monte Carlo measured at `k = 51` for pure Gamma
+noise):
+
+| split | N @ 2 pp | N @ 5 pp | N @ 10 pp | N @ 20 pp |
+|-------|----------|----------|-----------|-----------|
+| 100/0 | 2.9e3    | 4.6e2    | 1.2e2     | 2.9e1     |
+| 90/10 | 6.6e3    | 9.9e2    | 2.5e2     | 6.1e1     |
+| 80/20 | 1.0e4    | 1.4e3    | 3.3e2     | 8.3e1     |
+| 70/30 | 1.3e4    | 1.8e3    | 4.5e2     | 1.1e2     |
+| 60/40 | 3.9e4    | 6.0e3    | 1.5e3     | 3.7e2     |
+| 50/50 | never¹   | 7.0e4    | 1.5e4     | 3.6e3     |
+
+¹ A bias floor of about 2 pp (about 1 pp for imbalanced splits) does not
+average down, so near-balanced splits are systematically limited; at exactly
+50/50 roughly half of the runs report an unidentified split (`NaN`).  The
+values are Monte Carlo estimates, good to ~30%.
+
+### Choosing `qlo`
+
+The `qlo` keyword (lower quantile paired with the median) trades
+contamination robustness against clean-data efficiency: lower quantiles are
+less affected by signal/RFI contamination (the contaminated samples sit in
+the upper tail, and the quantile-value shift under contamination is
+smallest where the Gamma density is steepest), while higher quantiles give
+a more efficient spread estimate on clean data (the quantile correlation
+with the median grows with the quantile index).  Monte Carlo at `k = 51`
+gives a clean-data split error of 0.68/0.61/0.37 pp for `qlo` of
+0.05/0.1/0.2, versus a split bias of +4.3/+5.3/+6.8 pp at a 10%
+contamination fraction; the `mean` estimate is largely `qlo`-independent
+since the median anchors it.  The default `qlo = 0.1` is a good compromise;
+since RFI occupancy varies strongly between frequency bands, `qlo` can be
+tuned per search.
+
+### Worked example: Voyager 2020 single coarse channel
+
+The bandpass of that file is flat (coefficient of variation ~3%) across the
+central 80% of its 2^20 channels and rolls off toward the band edges (the
+-3 dB point is essentially at the edge), so the central 80% needs no
+flattening.  Running `noisefloor` with `k = 51` on the central 80% of the
+band (about 13.4 million samples, unflattened) recovers a polarization
+split of 64.3%/35.7%, in agreement with the 62%/38% measured directly from
+the full-polarization version of the same observation; the residual ~2 pp
+is real-data systematics (residual bandpass and RFI) on top of the ~0.6 pp
+statistical error at this sample size.

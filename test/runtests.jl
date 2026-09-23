@@ -2,6 +2,7 @@ using FrequencyDriftRateTransforms
 using FrequencyDriftRateTransforms: taylorstep!
 using Test
 using Statistics
+using Random
 using DataDeps
 
 if dirname(something(Base.current_project(), "")) == @__DIR__
@@ -135,6 +136,101 @@ include("taylorreference.jl")
         @test collect(taylorrates(8, -2)) == collect(range(-2, step=1//7, length=8))
     end
 
+    @testset "noisefloor" begin
+        nrng = MersenneTwister(42)
+        # One polarization of one integrated sample: Gamma(k, θ), i.e. the
+        # sum of k unit-mean exponentials scaled by θ
+        gamsamp(k, θ, n) = [θ * sum(randexp(nrng) for _ in 1:k) for _ in 1:n]
+        twopol(k, θ1, θ2, n) = gamsamp(k, θ1, n) .+ gamsamp(k, θ2, n)
+
+        # Single-polarization limit (θ2 = 0): exactly one Gamma
+        for k in (1, 4)
+            nd = twopol(k, 1.0, 0.0, 1_000_000)
+            nfst = noisefloor(nd; k)
+            @test nfst.mean ≈ k rtol = 0.03
+            @test nfst.std ≈ sqrt(k) rtol = 0.03
+            @test nfst.shape ≈ k rtol = 0.1
+            @test nfst.pol1 + nfst.pol2 ≈ nfst.mean rtol = 1e-6
+            @test nfst.polratio > 10  # second polarization essentially dead
+        end
+
+        # Two imbalanced polarizations (θ1:θ2 = 1:2)
+        nd = twopol(4, 1/3, 2/3, 1_000_000)
+        nfst = noisefloor(nd; k = 4)
+        @test nfst.mean ≈ 4 * (1/3 + 2/3) rtol = 0.03
+        @test nfst.std ≈ sqrt(4 * (1/9 + 4/9)) rtol = 0.08
+        @test 1.4 < nfst.polratio < 3.5  # true ratio 2.0 (moment-based split)
+        @test nfst.pol1 > nfst.pol2 > 0
+
+        # The lower quantile `qlo` trades contamination robustness against
+        # clean-data efficiency; on clean data all reasonable values agree
+        for qlo in (0.05, 0.1, 0.2)
+            nfq = noisefloor(nd; k = 4, qlo)
+            @test nfq.mean ≈ 4 * (1/3 + 2/3) rtol = 0.05
+            @test nfq.std ≈ sqrt(4 * (1/9 + 4/9)) rtol = 0.1
+        end
+
+        # Equal polarizations: ratio 1 and effective shape 2k.  This sits
+        # exactly on the split-identification ceiling, so either a split
+        # near unity or NaN (unidentified) is acceptable
+        nde = twopol(4, 0.5, 0.5, 1_000_000)
+        nfst = noisefloor(nde; k = 4)
+        @test nfst.mean ≈ 4 rtol = 0.03
+        @test isnan(nfst.polratio) || abs(nfst.polratio - 1) < 0.3
+        @test nfst.shape ≈ 8 rtol = 0.1
+
+        # Signal contamination: 1% of bins at 100x the floor leave the
+        # estimate unbiased while the plain mean is badly biased
+        ndc = copy(nd)
+        ndc[1:10_000] .= 100 * 4
+        nfst = noisefloor(ndc; k = 4)
+        @test nfst.mean ≈ 4 rtol = 0.03
+        @test noisefloor(ndc; k = 4, refine = false).mean ≈ 4 rtol = 0.06
+        @test mean(ndc) > 7
+
+        # Auto-k mode: mean accurate, effective shape between k and 2k, and
+        # no per-polarization split
+        nfst = noisefloor(nd)
+        @test nfst.mean ≈ 4 rtol = 0.03
+        @test 4 < nfst.shape < 10
+        @test nfst.polratio === nothing
+        @test nfst.pol1 === nothing && nfst.pol2 === nothing
+
+        # Degenerate data mirrors the fdrstats fallback semantics
+        @test noisefloor(zeros(100)) ==
+              (mean = 0.0, std = Inf, shape = nothing, polratio = nothing,
+               pol1 = nothing, pol2 = nothing)
+        @test noisefloor(fill(3.5, 100)) ==
+              (mean = 3.5, std = Inf, shape = nothing, polratio = nothing,
+               pol1 = nothing, pol2 = nothing)
+        @test_throws ArgumentError noisefloor(nd; k = 0)
+        @test_throws ArgumentError noisefloor(nd; qlo = 0)
+        @test_throws ArgumentError noisefloor(nd; qlo = 0.5)
+
+        # An unidentified split (data less variable than the model allows)
+        # is reported as NaN rather than a spurious balanced split
+        ndz = 1.0 .+ 1e-3 .* randexp(nrng, 1000)
+        nfz = noisefloor(ndz; k = 4)
+        @test isnan(nfz.polratio)
+        @test isnan(nfz.pol1) && isnan(nfz.pol2)
+
+        # FDR matrices: a taylorfdr path sums Ntp spectrogram samples, so
+        # the per-polarization shape is k * Ntp and the floor scales
+        # accordingly
+        Ntf, Ntt = 512, 16
+        nspec = reshape(twopol(1, 0.5, 0.5, Ntf * Ntt), Ntf, Ntt)
+        nfdr = taylorfdr(nspec, 0)
+        nfst = noisefloor(nfdr; k = 16)  # Ntp = nextpow(2, Ntt) = 16
+        @test nfst.mean ≈ 16 * (0.5 + 0.5) rtol = 0.05
+        @test 16 <= nfst.shape <= 40  # between k * Ntp and 2 * k * Ntp
+
+        # The ZDT output inherits the same shape arithmetic (its absolute
+        # scale is normalized, so only the shape is checked)
+        zws = ZDTWorkspace(nspec, range(-0.25f0, 0.25f0, length = 9))
+        nfz = noisefloor(zdtfdr(zws); k = Ntt)
+        @test Ntt <= nfz.shape <= 2.5 * Ntt
+    end
+
     @testset "fdrstats" begin
         # taylorfdr drift blocks with out-of-band drift produce all-zero
         # columns; fdrstats must ignore them (fdrnormalize! used to divide by
@@ -170,6 +266,24 @@ include("taylorreference.jl")
         @test s2 ≈ std(1.0f0:4.0f0)
         @test fdrstats([copy(fdr1), taylorfdr(spec, 0)]) == (mean = m, std = s)
         @test fdrstats(fill(3.0f0, 4, 8)) == (mean = 3.0f0, std = Inf)
+
+        # Robust estimation (delegates to noisefloor): signal contamination
+        # leaves (mean, std) stable while the plain statistics are badly
+        # biased.  The data is Gamma(2, 1) per sample (two unit-mean
+        # exponential polarizations with k = 2).
+        rngf = MersenneTwister(7)
+        gm = randexp(rngf, Float32, 256, 256) .+ randexp(rngf, Float32, 256, 256)
+        gc = copy(gm)
+        gc[1:1000] .= 1000f0
+        mr, sr = fdrstats(gc; robust = true, k = 2)
+        @test mr ≈ 2 rtol = 0.05
+        @test sr ≈ sqrt(2) rtol = 0.15
+        @test fdrstats(gc; robust = true, k = 2, qlo = 0.2).mean ≈ 2 rtol = 0.05
+        @test fdrstats(gc).mean > 5
+        @test fdrstats(fill(3.0f0, 4, 8); robust = true) == (mean = 3.0, std = Inf)
+        @test fdrstats(zeros(Float32, 4, 4); robust = true) == (mean = 0.0, std = Inf)
+        @test fdrstats([gc, gc]; robust = true, k = 2) ==
+              fdrstats(gc; robust = true, k = 2)
     end
 
     @testset "taylorstep!" begin
@@ -395,6 +509,21 @@ include("taylorreference.jl")
                 @test fdrstats(gz) == (mean = 0.0f0, std = Inf)
                 m, s = fdrstats(CuArray(d2))
                 @test 0 < s < Inf
+            end
+
+            @testset "noisefloor [CUDA]" begin
+                rngg = MersenneTwister(11)
+                gm2 = randexp(rngg, Float32, 256, 256) .+
+                      randexp(rngg, Float32, 256, 256)
+                gd = CuArray(gm2)
+                @test noisefloor(gd; k = 2).mean ≈ noisefloor(gm2; k = 2).mean
+                @test noisefloor(gd; k = 2).std ≈ noisefloor(gm2; k = 2).std
+                @test noisefloor(gd; k = 2).polratio ≈
+                      noisefloor(gm2; k = 2).polratio
+                @test fdrstats(gd; robust = true, k = 2) ==
+                      fdrstats(gm2; robust = true, k = 2)
+                @test fdrstats(CuArray(zeros(Float32, 4, 4)); robust = true) ==
+                      (mean = 0.0, std = Inf)
             end
         else
             @info "Skipping CUDA tests: no functional GPU available"

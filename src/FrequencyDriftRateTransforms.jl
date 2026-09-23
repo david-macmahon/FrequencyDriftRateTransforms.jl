@@ -1,5 +1,8 @@
 module FrequencyDriftRateTransforms
 
+# noisefloor.jl
+export noisefloor
+
 # fdrutils.jl
 export create_fdr, fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
 export findprotohits
@@ -46,6 +49,7 @@ end
 end
 
 include("batchrates.jl")
+include("noisefloor.jl")
 include("fdrutils.jl")
 include("intfdr.jl")
 include("fftfdr.jl")
