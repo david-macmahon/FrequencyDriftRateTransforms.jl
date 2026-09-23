@@ -33,6 +33,7 @@ mutable struct ZDTWorkspace{T}
     Yf::AbstractMatrix{<:Complex}
     Y::AbstractMatrix{<:Complex}
     Ys::AbstractMatrix{<:Complex}
+    Ys2::AbstractMatrix{<:Complex}
     V::AbstractMatrix{<:Complex}
 
     # Input/output FFT plans
@@ -54,15 +55,22 @@ mutable struct ZDTWorkspace{T}
         Nf, Nt = size(spectrogram)
         Nl = calcNl(Nt, Nr, factors)
 
+        # The convolve buffers (`Y` and `V`) are stored *rate-major* (drift
+        # rate along the first, contiguous dimension) so that the CZT FFTs
+        # run on contiguous data; `F` and `Ys2` stay freq-major for the
+        # input/output real FFTs.  The layout changes are fused into
+        # `zdtpreprocess!` and `zdtpostprocess!`, which already rewrite the
+        # whole array.
         F = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nt)
-        Y = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nl)
+        Y = similar(spectrogram, complex(eltype(spectrogram)), Nl, Nf÷2+1)
+        Ys2 = similar(spectrogram, complex(eltype(spectrogram)), Nf÷2+1, Nr)
 
-        Yf = @view Y[:, 1:Nt]
-        Ys = @view Y[:, 1:Nr]
+        Yf = @view Y[1:Nt, :]
+        Ys = @view Y[1:Nr, :]
 
         ws = new{T}(
             Nf, Nt, r0, δr, Nr, Nl, factors,
-            F, Yf, Y, Ys
+            F, Yf, Y, Ys, Ys2
         )
 
         # Call function to plan FFTs.  This allows for specialization based on
@@ -120,20 +128,26 @@ end
 
 Make the ZDT's FFT plans for `spectrogram::AbstractArray` for which a more
 specialized method is not available.
+
+NB: the CPU FFT plans are created without enabling FFTW's multithreading
+because `FFTW.set_num_threads` sets process-global state, which a package
+should not silently change.  To use multiple threads for the CPU FFTs, call
+`FFTW.set_num_threads(Threads.nthreads())` before constructing the workspace;
+plans pick up the thread count at planning time.
 """
 function plan_ffts!(workspace::ZDTWorkspace,
                     spectrogram::AbstractMatrix{<:Real};
                     output_aligned::Bool=false)
     Nf = workspace.Nf
     Y = workspace.Y
-    Ys = workspace.Ys
+    Ys2 = workspace.Ys2
     irfft_flags = FFTW.ESTIMATE | (output_aligned ? 0 : FFTW.UNALIGNED)
 
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
-    workspace.irfft_plan = plan_irfft(Ys, Nf, 1; flags=irfft_flags)
+    workspace.irfft_plan = plan_irfft(Ys2, Nf, 1; flags=irfft_flags)
 
-    workspace.fft_plan = plan_fft!(Y, 2)
-    workspace.ifft_plan = plan_ifft!(Y, 2)
+    workspace.fft_plan = plan_fft!(Y, 1)
+    workspace.ifft_plan = plan_ifft!(Y, 1)
 
     workspace.fft_workarea = nothing
 
@@ -190,11 +204,14 @@ function computeV!(workspace::ZDTWorkspace)
     Nr = workspace.Nr
     Nl = workspace.Nl
     V  = workspace.V
-    # Populate the low portion of V
-    V[:, 1:Nr] .= vlow.(CartesianIndices((axes(V,1), 1:Nr)), δr, Nf)
-    # Populate the high portion of V
-    lastl = lastindex(V, 2)
-    V[:, end-Nt+2:end] .= vhigh.(CartesianIndices((axes(V,1), lastl-Nt+2:lastl)), δr, Nf, Nl)
+    # `V` is stored rate-major, so broadcast the zero-based channel index
+    # along the rows and the zero-based rate index down the columns to keep
+    # the (k, l) argument order of `vlow`/`vhigh`.
+    K = Nf÷2 + 1
+    # Populate the low portion of V (zero-based drift rates 0:Nr-1)
+    V[1:Nr, :] .= vlow.((0:K-1)', 0:Nr-1, δr, Nf)
+    # Populate the high portion of V (zero-based drift rates Nl-Nt+1:Nl-1)
+    V[end-Nt+2:end, :] .= vhigh.((0:K-1)', (Nl-Nt+1):(Nl-1), δr, Nf, Nl)
     # FFT V in-place
     mul!(V, workspace.fft_plan, V)
 end
@@ -225,6 +242,25 @@ function zdtinput!(workspace, spectrogram)
     return workspace
 end
 
+# Multithreaded, cache-blocked transpose: `dest[j, i] = src[i, j]`.  Blocking
+# keeps both sides' cache lines fully utilized (a naive transpose touches a
+# whole cache line per element); the innermost loop over the contiguous
+# dimension vectorizes.
+function blocked_transpose!(dest, src)
+    K, N = size(src)
+    T = 64
+    @sync for j0 in 1:T:N
+        Threads.@spawn for i0 in 1:T:K
+            @inbounds for j in j0:min(j0 + T - 1, N)
+                @simd for i in i0:min(i0 + T - 1, K)
+                    dest[j, i] = src[i, j]
+                end
+            end
+        end
+    end
+    return dest
+end
+
 """
     zdtpreprocess!(workspace[, r0]) -> workspace
 
@@ -240,12 +276,35 @@ function zdtpreprocess!(workspace, r0::Float32=workspace.r0)
     Yf = workspace.Yf
     Y  = workspace.Y
 
-    # Multiply `F` by `prephase` as per the parameters from `workspace`
-    Yf .= F .* prephase.(CartesianIndices(F), r0, δr, Nf)
+    # Multiply `workspace.F` by `prephase` as per the parameters from
+    # `workspace`, storing the result transposed into the rate-major `Yf`
+    # view of `workspace.Y` (this fuses the layout change required by
+    # `zdtconvolve!` into this pass).
+    Yft = PermutedDimsArray(Yf, (2, 1))
+    Yft .= F .* prephase.(CartesianIndices(F), r0, δr, Nf)
 
-    # Zero-pad the rest of `Y`
+    # Zero-pad the rest of `Y` (the rows beyond `Nt`)
     # TODO: Add Yz field to ZDTWorkspace for this view?
-    fill!(@view(Y[:, Nt+1:end]), zero(eltype(Y)))
+    fill!(@view(Y[Nt+1:end, :]), zero(eltype(Y)))
+    return workspace
+end
+
+# CPU-optimized variant: a fused transposed broadcast is slow for CPU arrays
+# (strided scalar access), so transpose with blocked multithreaded loops
+# first and then multiply by `prephase` in place (contiguous).  Dispatch on
+# `Array` (not `StridedArray`, which in recent Julia versions also matches
+# GPU arrays); other CPU wrappers fall back to the generic method.
+function zdtpreprocess!(workspace::ZDTWorkspace{<:Array}, r0::Float32)
+    Nf = workspace.Nf
+    Nt = workspace.Nt
+    δr = workspace.δr
+    F  = workspace.F
+    Yf = workspace.Yf
+    Y  = workspace.Y
+
+    blocked_transpose!(Yf, F)
+    Yf .*= prephase.((0:Nf÷2)', 0:Nt-1, r0, δr, Nf)
+    fill!(@view(Y[Nt+1:end, :]), zero(eltype(Y)))
     return workspace
 end
 
@@ -312,7 +371,9 @@ end
 """
     zdtpostprocess!([w,] workspace) -> workspace
 
-Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`.
+Read `workspace.Ys`, multiply it by `postphase` as per the parameters in
+`workspace`, and store the result transposed in `workspace.Ys2` (which
+[`zdtoutput!`](@ref) consumes).
 
 `w` specifies the windowing function to apply prior to the final output inverse
 FFT.  It may be given as `:rect` to use a rectangular window (the default),
@@ -322,9 +383,24 @@ should return the window value for that channel number.  For details about the
 window function, see the extended help of [`postphase`](@ref).
 """
 function zdtpostprocess!(w::Function, workspace)
-    # Multiply `workspace.Ys` by `postphase` as per the parameters in `workspace`
-    workspace.Ys .*= postphase.(w, CartesianIndices(workspace.Ys),
-                                workspace.δr, workspace.Nf)
+    # Multiply `workspace.Ys` by `postphase` as per the parameters in
+    # `workspace`, storing the result transposed in the freq-major `Ys2`
+    # (this fuses the layout change required by `zdtoutput!` into this
+    # pass).  `Ys` is rate-major, so broadcast the zero-based channel index
+    # along the rows and the zero-based rate index down the columns to keep
+    # the (k, l) argument order of `postphase`.
+    Yst = PermutedDimsArray(workspace.Ys, (2, 1))
+    workspace.Ys2 .= postphase.(w, 0:workspace.Nf÷2, (0:workspace.Nr-1)',
+                                workspace.δr, workspace.Nf) .* Yst
+    return workspace
+end
+
+# CPU-optimized variant (see the `zdtpreprocess!` note): blocked transpose
+# followed by an in-place contiguous phase multiply.
+function zdtpostprocess!(w::Function, workspace::ZDTWorkspace{<:Array})
+    blocked_transpose!(workspace.Ys2, workspace.Ys)
+    workspace.Ys2 .*= postphase.(w, CartesianIndices(workspace.Ys2),
+                                 workspace.δr, workspace.Nf)
     return workspace
 end
 
@@ -354,8 +430,8 @@ end
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.
 """
 function zdtoutput!(dest, workspace)
-    # Backwards FFT `workspace.Ys` into `dest`
-    mul!(dest, workspace.irfft_plan, workspace.Ys)
+    # Backwards FFT `workspace.Ys2` into `dest`
+    mul!(dest, workspace.irfft_plan, workspace.Ys2)
 end
 
 """
@@ -442,7 +518,7 @@ window function, see the extended help of [`postphase`](@ref).
 function zdtfdr(w::Union{Function,Symbol,Val}, workspace, spectrogram=nothing; r0::Real=workspace.r0)
     Nf = workspace.Nf
     Nr = workspace.Nr
-    dest = similar(workspace.Ys, real(eltype(workspace.Ys)), Nf, Nr)
+    dest = similar(workspace.Ys2, real(eltype(workspace.Ys2)), Nf, Nr)
     zdtfdr!(w, dest, workspace, spectrogram; r0=r0)
 end
 

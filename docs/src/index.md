@@ -111,7 +111,11 @@ itself is implemented with a series of phase factor multiplications and FFTs.
 The ZDT algorithm of this package can be used on a CPU or a GPU.  It must be
 emphasized that the CPU code and GPU code are the same code; there are not
 separate kernels for CPU vs GPU.  The ability to run the same code on CPU or GPU
-is one of the many amazing features of Julia and CUDA.jl!
+is one of the many amazing features of Julia and CUDA.jl!  Note that on the
+CPU, the FFTW plans used by the ZDT are created single-threaded (because
+`FFTW.set_num_threads` sets process-global state, which this package does not
+change silently); call `FFTW.set_num_threads(Threads.nthreads())` before
+constructing a `ZDTWorkspace` to parallelize the CPU FFTs.
 
 The ZDT can compute an FDR matrix spanning many drift rates in smaller pieces,
 which can be very useful when working on a memory constrained device like a

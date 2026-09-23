@@ -57,11 +57,11 @@ function plan_ffts!(workspace::ZDTWorkspace,
                     output_aligned::Bool=false)
     Nf = workspace.Nf
     Y = workspace.Y
-    Ys = workspace.Ys
+    Ys2 = workspace.Ys2
     workareasize = Ref{Csize_t}(0)
 
     # Plan one of biggest FFTs first: Forward FFT of Y
-    workspace.fft_plan = plan_fft!(Y, 2)
+    workspace.fft_plan = plan_fft!(Y, 1)
 
     # Get size of plan's workarea
     cufftGetSize(workspace.fft_plan.handle, workareasize)
@@ -71,7 +71,7 @@ function plan_ffts!(workspace::ZDTWorkspace,
     cufftSetWorkArea(workspace.fft_plan, workspace.fft_workarea)
 
     # Backward FFT of Y
-    workspace.ifft_plan = plan_ifft!(Y, 2)
+    workspace.ifft_plan = plan_ifft!(Y, 1)
     # workspace.ifft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
     # CUDA 5.4.2 and earlier do not properly convert the ScaledPlan to a
     # cufftHandle, so we set the workarea on the contained CuFFTPlan directly.
@@ -80,8 +80,8 @@ function plan_ffts!(workspace::ZDTWorkspace,
     # Forward real FFT for input to F
     workspace.rfft_plan = plan_rfft(spectrogram, 1)
 
-    # Backward real FFT for output from Ys
-    workspace.irfft_plan = plan_irfft(Ys, Nf, 1)
+    # Backward real FFT for output from Ys2
+    workspace.irfft_plan = plan_irfft(Ys2, Nf, 1)
 
     return nothing
 end
@@ -92,17 +92,17 @@ end
 Output ZDT results into `dest`, which should have size `(Nf, Nr)`.  This method
 exists to avoid an allocating hack that CUDA.jl employs to work around a CUFFT
 "known issue" that "cuFFT will always overwrite the input for out-of-place C2R
-transform".  In our case, we don't care whether the input, `workspace.Ys`, gets
+transform".  In our case, we don't care whether the input, `workspace.Ys2`, gets
 clobbered, but it does mean that `zdtoutput!` cannot be called more than once per
 ZDT operation.
 """
 function zdtoutput!(dest::CuMatrix{<:Real}, workspace)
-    # Backwards FFT `workspace.Ys` into `dest`
+    # Backwards FFT `workspace.Ys2` into `dest`
     # workspace.irfft_plan is an AbstractFFTs.ScaledPlan that wraps a CuFFTPlan.
     # CUDA 5.4.2 and earlier do not properly convert the ScaledPlan to a
     # cufftHandle, so we operate on the contained CuFFTPlan directly.
     update_stream(workspace.irfft_plan.p)
-    cufftExecC2R(workspace.irfft_plan.p, workspace.Ys, dest)
+    cufftExecC2R(workspace.irfft_plan.p, workspace.Ys2, dest)
     dest .*= workspace.irfft_plan.scale
     return dest
 end

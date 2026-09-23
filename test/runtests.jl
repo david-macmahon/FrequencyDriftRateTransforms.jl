@@ -338,11 +338,11 @@ include("taylorreference.jl")
         # Growing Nr to the full batch size does not change Nl
         @test calcNl(64, growNr(64, 21)) == calcNl(64, 21)
         @test estimate_memory(100, 50, 40) ==
-              4 * (100*50*4 + 100*90*3 + 100*40)
+              4 * (100*50*4 + 100*90*3 + 100*40*2)
         @test estimate_memory(100, 50, 40, 2, 3) ==
-              4 * (100*50*5 + 100*90*3 + 100*40*3)
+              4 * (100*50*5 + 100*90*3 + 100*40*4)
         @test estimate_memory(8, 8, 8; factors=(2,)) ==
-              4 * (8*8*4 + 8*16*3 + 8*8)
+              4 * (8*8*4 + 8*16*3 + 8*8*2)
         zdtws = ZDTWorkspace(d2, -1:0.5:1)
         @test driftrates(zdtws) == range(-1.0f0, step=0.5f0, length=5)
         @test collect(driftrates(zdtws)) ≈ collect(-1:0.5:1)

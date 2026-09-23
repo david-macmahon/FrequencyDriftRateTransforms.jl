@@ -50,9 +50,9 @@ function estimate_memory(Nf, Nt, Nr, Ni=1, No=1;
     Nz = 3
 
     sizeof(Float32) * (
-        (Nf * Nt) * Ni +   # Input buffers and real FFT work areas
-        (Nf * Nl) * Nz +   # ZDT complex buffers and FFT work area (loosely)
-        (Nf * Nr) * No     # Output buffers
+        (Nf * Nt) * Ni +          # Input buffers and real FFT work areas
+        (Nf * Nl) * Nz +          # ZDT complex buffers and FFT work area (loosely)
+        (Nf * Nr) * (No + 1)      # Output buffers plus half-spectrum buffer (`Ys2`)
     )
 end
 
