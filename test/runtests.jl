@@ -231,6 +231,53 @@ include("taylorreference.jl")
         @test Ntt <= nfz.shape <= 2.5 * Ntt
     end
 
+    @testset "fast_quantile" begin
+        # The histogram-refinement selection must reproduce
+        # `Statistics.quantile` exactly, including types
+        qsel(x, ps) = fast_quantile(x, ps)
+        qrng = MersenneTwister(7)
+        for T in (Float32, Float64, Int64, Int32, Float16, UInt16)
+            for n in (1, 2, 3, 7, 100, 1000)
+                for kind in
+                    (T <: Integer ? (:rand, :ties, :ints) : (:rand, :randn, :ties))
+                    x = if kind === :rand
+                        rand(qrng, T, n)
+                    elseif kind === :randn
+                        randn(qrng, T, n)
+                    elseif kind === :ties
+                        T.(round.(rand(qrng, Float64, n) .* 5))
+                    else
+                        rand(qrng, 1:10, n) .% T
+                    end
+                    for ps in ([0.1, 0.5], [0.0, 0.05, 0.3, 0.5, 0.999, 1.0])
+                        @test qsel(x, ps) == quantile(vec(x), ps)
+                        @test typeof(qsel(x, ps)) == typeof(quantile(vec(x), ps))
+                    end
+                end
+            end
+        end
+        # Degenerate and extreme values
+        for x in (fill(3.0, 100), [Inf, 1.0, -Inf, 2.0], rand(qrng, 1:10, 500),
+                  fill(Int32(7), 3), [-0.0, 0.0, 1.5],
+                  [typemax(Int32), typemin(Int32), Int32(0)],
+                  [1.0f0, 1.0f0 + eps(1.0f0), 1.0f0 - eps(1.0f0)],
+                  reshape(collect(Float32, 1.0:12.0), 3, 4))
+            for ps in ([0.1, 0.5], [0.0, 0.5, 1.0])
+                @test qsel(x, ps) == quantile(vec(x), ps)
+            end
+        end
+        # Scalar and tuple probability forms
+        x = collect(1.0:100)
+        @test qsel(x, 0.25) == quantile(x, 0.25)
+        @test qsel(x, (0.1, 0.5)) == quantile(x, (0.1, 0.5))
+        # NaN handling matches `quantile`
+        @test_throws ArgumentError qsel([1.0, NaN, 3.0], [0.5])
+        @test_throws ArgumentError quantile([1.0, NaN, 3.0], [0.5])
+        # Large-array spot check (Float32 keys resolve in few passes)
+        x = randexp(qrng, Float32, 2_000_000)
+        @test qsel(x, [0.1, 0.5]) == quantile(vec(x), [0.1, 0.5])
+    end
+
     @testset "fdrstats" begin
         # taylorfdr drift blocks with out-of-band drift produce all-zero
         # columns; fdrstats must ignore them (fdrnormalize! used to divide by
@@ -524,6 +571,20 @@ include("taylorreference.jl")
                       fdrstats(gm2; robust = true, k = 2)
                 @test fdrstats(CuArray(zeros(Float32, 4, 4)); robust = true) ==
                       (mean = 0.0, std = Inf)
+            end
+
+            @testset "fast_quantile [CUDA]" begin
+                rngg = MersenneTwister(11)
+                gm2 = randexp(rngg, Float32, 256, 256) .+
+                      randexp(rngg, Float32, 256, 256)
+                # On-device selection matches `quantile` exactly
+                @test fast_quantile(CuArray(gm2), [0.1, 0.5]) ==
+                      quantile(vec(gm2), [0.1, 0.5])
+                gi = Int32.(round.(gm2 .* 100))
+                @test fast_quantile(CuArray(gi), [0.25, 0.75]) ==
+                      quantile(vec(gi), [0.25, 0.75])
+                @test_throws ArgumentError fast_quantile(
+                    CuArray([1.0f0, NaN32, 3.0f0]), [0.5])
             end
         else
             @info "Skipping CUDA tests: no functional GPU available"

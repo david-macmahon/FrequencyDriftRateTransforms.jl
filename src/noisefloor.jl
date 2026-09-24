@@ -24,10 +24,6 @@ _gam_med_mean(k) = gamma_inc_inv(k, 0.5, 0.5) / k
 _gam_med_qlo_sigma(k, qlo) =
     (gamma_inc_inv(k, 0.5, 0.5) - gamma_inc_inv(k, qlo, 1 - qlo)) / sqrt(k)
 
-# Signal-free quantiles of the data.  A method is defined for `CuArray` in
-# the CUDA extension; the fallback here lets `quantile` handle copying.
-_noisefloor_quantiles(data, ps) = quantile(vec(data), ps)
-
 """
     noisefloor(data; k=nothing, qlo=0.1, clip=4.0, refine=true) -> NamedTuple
 
@@ -98,7 +94,7 @@ function noisefloor(data::AbstractArray{<:Real}; k=nothing, qlo=0.1, clip=4.0,
         throw(ArgumentError("k must be positive"))
     !(0 < qlo < 0.5) &&
         throw(ArgumentError("qlo must be between 0 and 0.5"))
-    qlo_val, q50 = _noisefloor_quantiles(data, [qlo, 0.5])
+    qlo_val, q50 = fast_quantile(data, [qlo, 0.5])
     if !(q50 > 0) || !(qlo_val < q50)
         return (mean = Float64(mean(data)), std = Inf, shape = nothing,
                 polratio = nothing, pol1 = nothing, pol2 = nothing)

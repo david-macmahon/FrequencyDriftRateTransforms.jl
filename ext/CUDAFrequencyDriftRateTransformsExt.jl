@@ -3,23 +3,24 @@ module CUDAFrequencyDriftRateTransformsExt
 using Statistics
 
 import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, zdtoutput!,
-                                     fdrsynchronize, taylortree!,
-                                     _noisefloor_quantiles
+                                     fdrsynchronize, taylortree!
 
 if isdefined(Base, :get_extension)
     import FFTW
-    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuStaticSharedArray,
-                synchronize, @cuda, blockIdx, threadIdx, blockDim,
-                sync_threads
+    import CUDA
+    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuDeviceArray, CuDeviceVector,
+                CuVector, CuStaticSharedArray, synchronize, @cuda, @atomic,
+                blockIdx, threadIdx, blockDim, gridDim, sync_threads
     using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
                        update_stream, cufftExecC2R
 else
-    import ..FFTW
-    import ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuStaticSharedArray,
-                   synchronize, @cuda, blockIdx, threadIdx, blockDim,
-                   sync_threads
+    import FFTW
+    import ..CUDA
+    using ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuDeviceArray, CuDeviceVector,
+                  CuVector, CuStaticSharedArray, synchronize, @cuda, @atomic,
+                  blockIdx, threadIdx, blockDim, gridDim, sync_threads
     using ..CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
     # Import CUDA functions for optimizing workarea usage
     import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
@@ -35,17 +36,7 @@ function fdrsynchronize(::Type{<:CuArray})
     synchronize()
 end
 
-"""
-    _noisefloor_quantiles(data::CuArray, ps)
-
-CUDA-specific implementation of the signal-free quantiles used by
-`noisefloor`: the quantiles are computed on the host after copying the data
-off the device (`quantile` needs sorted data, which is not worth doing on
-the device for the sizes involved here).
-"""
-function _noisefloor_quantiles(data::CuArray, ps)
-    quantile(vec(Array(data)), ps)
-end
+include("cuda_fastquantile.jl")
 
 """
     plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuMatrix{<:Real};

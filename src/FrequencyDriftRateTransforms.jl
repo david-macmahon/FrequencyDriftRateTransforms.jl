@@ -1,5 +1,8 @@
 module FrequencyDriftRateTransforms
 
+# fastquantile.jl
+export fast_quantile
+
 # noisefloor.jl
 export noisefloor
 
@@ -49,6 +52,7 @@ end
 end
 
 include("batchrates.jl")
+include("fastquantile.jl")
 include("noisefloor.jl")
 include("fdrutils.jl")
 include("intfdr.jl")

@@ -259,3 +259,39 @@ split of 64.3%/35.7%, in agreement with the 62%/38% measured directly from
 the full-polarization version of the same observation; the residual ~2 pp
 is real-data systematics (residual bandpass and RFI) on top of the ~0.6 pp
 statistical error at this sample size.
+
+## Fast quantiles
+
+The noise floor estimate (and any other quantile-based statistic) is only as
+fast as its quantiles, and `Statistics.quantile` copies the data
+and partially sorts that copy single-threaded — about 95 s for a 4 GiB
+array, which dwarfs every other step of a search pipeline.  The
+[`fast_quantile`](@ref) function computes the *same* quantiles bit-for-bit
+(same rank arithmetic, interpolation, NaN handling, and result types, which
+the test suite verifies against `Statistics.quantile`) without copying or
+sorting: the handful of required order statistics are selected by
+iterative histogram refinement over order-preserving unsigned integer keys
+(the sign-flipped IEEE bit patterns of the values).  Each pass bins the
+keys into 2048 bins to narrow the key interval containing each rank, and a
+bin covering a single key resolves every rank it holds — three streaming
+passes for `Float32` data (about six for `Float64`), with ties resolving
+naturally and no sorted copy ever materialized.
+
+```julia
+q = fast_quantile(data, [0.1, 0.5])   # exact match to quantile(vec(data), [0.1, 0.5])
+m = fast_quantile(data, 0.5)          # scalar probability gives a scalar
+q1, q2 = fast_quantile(data, (0.1, 0.9))  # tuple probability gives a tuple
+```
+
+On the host, the histogram passes are multithreaded when `Threads.nthreads()`
+is greater than one and the data is large (~3 s for 4 GiB with 16 threads,
+versus ~95 s for `quantile`).  For `CuArray`s the CUDA extension runs the
+same algorithm on the device, so the data never leaves the GPU: ~0.07 s for
+4 GiB, and the number of requested quantiles is nearly free since they share
+each pass's histograms.  The GPU method needs no scratch space proportional
+to the data (unlike a device-side sort, which requires a full-size temporary
+buffer).  Inputs with eltypes that have no order-preserving bit pattern fall
+back to `Statistics.quantile`.
+
+`noisefloor` uses `fast_quantile` internally for its signal-free quantiles.
+
