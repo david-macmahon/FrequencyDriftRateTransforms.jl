@@ -37,6 +37,7 @@ function fdrsynchronize(::Type{<:CuArray})
 end
 
 include("cuda_fastquantile.jl")
+include("cuda_findhits.jl")
 
 """
     plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuMatrix{<:Real};

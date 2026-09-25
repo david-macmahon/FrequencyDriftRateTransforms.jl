@@ -137,7 +137,8 @@ batches = batchrates(Nt, δhzps, rmin, rmax)
 
 All batches share the same length and step size, so a single `ZDTWorkspace`
 can be reused for every batch, with the `r0` keyword selecting the first rate
-of each batch.  Each batch's FDR matrix can then be searched for proto-hits:
+of each batch.  Each batch's FDR matrix can then be searched for proto-hits
+and clustered into hits:
 
 ```julia
 ws = ZDTWorkspace(spectrogram, first(batches))
@@ -145,14 +146,16 @@ for rates in batches
     fdr = zdtfdr(ws; r0 = first(rates))
     m, s = fdrstats(fdr)
     hijs = findprotohits(fdr, fdrdenormalize(5.0, m, s))
-    # ... process hijs (e.g. cluster them into hits) ...
+    # ... process hijs (see "Finding hits" below) ...
 end
 ```
 
 Note the use of `fdrdenormalize` to denormalize the SNR threshold (5 sigma
 here) rather than normalizing the whole FDR matrix via `fdrnormalize!`; for
 searching, denormalizing the single threshold value is more efficient (see
-[`fdrdenormalize`](@ref)).
+[`fdrdenormalize`](@ref)).  The [`findhits`](@ref) function (see
+[Finding hits](@ref)) clusters the proto-hits into hits directly, taking the
+SNR threshold and statistics itself.
 
 ## Noise floor estimation
 
@@ -259,6 +262,50 @@ split of 64.3%/35.7%, in agreement with the 62%/38% measured directly from
 the full-polarization version of the same observation; the residual ~2 pp
 is real-data systematics (residual bandpass and RFI) on top of the ~0.6 pp
 statistical error at this sample size.
+
+## Finding hits
+
+The [`findhits`](@ref) function turns the proto-hits of an FDR matrix (see
+[`findprotohits`](@ref)) into *hits*: the local maxima of the thresholded
+region(s), one per unique signal candidate.  Proto-hits within a Chebyshev
+distance of 2 indices of each other (bridging single-pixel gaps) belong to
+the same region; the regions are found with a decreasing-value union-find
+sweep, and each region is reported through its peak:
+
+```julia
+hits = findhits(fdr, 5.0)                       # 5-sigma threshold
+hits = findhits(fdr, 5.0; min_prominence = 1.5) # + persistence filtering
+hits.index        # Vector{CartesianIndex{2}} of hit peaks
+hits.value        # peak value of each hit, in sigma units (z-score)
+hits.prominence   # prominence of each hit, in sigma units
+```
+
+Everything is expressed in *sigma* units by default: the threshold, the
+optional `min_prominence`, and the returned `value`/`prominence` columns.
+The normalization pair `(m, s)` is `fdrstats(fdr; robust = true)` by
+default (the noise-floor statistics recommended for thresholding; see
+[Noise floor estimation](@ref)) and can be passed explicitly as the third
+positional argument — e.g. to share one pair across all batches of a
+batched search, or `stats = (0, 1)` to work entirely in raw FDR value
+units (in which case `threshold` and `min_prominence` must be raw values,
+and the returned columns are raw as well).
+
+The `min_prominence` keyword applies a persistence filter to the secondary
+peaks of a region: a secondary peak (a local maximum that merges into a
+higher peak as the threshold sweeps down) is reported only if it rises at
+least `min_prominence` above the saddle at which it merges.  This recovers
+distinct signals that are bridged by an above-threshold arm — e.g. the
+X-shaped pattern a strong drifting signal leaves in an FDR matrix — and
+suppresses the low-contrast wiggles along such arms.  With
+`min_prominence = nothing` (the default), only the maximum of each region
+is reported.  The maximum of each region is *always* reported and gets
+`prominence = Inf` (it never merges into a higher peak), so every
+above-threshold region yields exactly one hit at minimum, and
+`hits.prominence .>= min_prominence` always reproduces the reported set.
+
+For `CuArray`s, the thresholding runs on the GPU via 32x32 tile maxima (so
+only tiles containing proto-hits are transferred) and the clustering runs
+on the host.
 
 ## Fast quantiles
 

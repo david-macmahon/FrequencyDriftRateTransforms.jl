@@ -10,6 +10,9 @@ export noisefloor
 export create_fdr, fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
 export findprotohits
 
+# findhits.jl
+export findhits
+
 # intfdr.jl
 export intshift, intshift!
 export intfdr, intfdr!
@@ -55,6 +58,7 @@ include("batchrates.jl")
 include("fastquantile.jl")
 include("noisefloor.jl")
 include("fdrutils.jl")
+include("findhits.jl")
 include("intfdr.jl")
 include("fftfdr.jl")
 include("taylorfdr.jl")

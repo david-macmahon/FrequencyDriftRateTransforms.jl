@@ -278,6 +278,102 @@ include("taylorreference.jl")
         @test qsel(x, [0.1, 0.5]) == quantile(vec(x), [0.1, 0.5])
     end
 
+    @testset "findhits" begin
+        hrng = MersenneTwister(21)
+        # Two peaks bridged by an above-threshold arm with saddle at 6.0
+        fdr = zeros(50, 60)
+        fdr[10, 10] = 10.0
+        for k in 11:19
+            fdr[k, k] = 6.0
+        end
+        fdr[20, 20] = 7.0
+
+        # Cluster-peak semantics: one hit per region, Inf prominence
+        h = findhits(fdr, 5.0, (0, 1))
+        @test h.index == [CartesianIndex(10, 10)]
+        @test h.value == [10.0]
+        @test h.prominence == [Inf]
+
+        # Persistence filter recovers the bridge-merged peak
+        h = findhits(fdr, 5.0, (0, 1); min_prominence = 0.5)
+        @test h.index == [CartesianIndex(10, 10), CartesianIndex(20, 20)]
+        @test h.value == [10.0, 7.0]
+        @test h.prominence == [Inf, 1.0]  # peak B rises 1.0 above the arm
+        h = findhits(fdr, 5.0, (0, 1); min_prominence = 1.5)
+        @test h.index == [CartesianIndex(10, 10)]
+
+        # A low-contrast wiggle on the arm is suppressed by min_prominence
+        fdr2 = copy(fdr)
+        fdr2[15, 16] = 6.5   # local max, 0.5 above the arm
+        h = findhits(fdr2, 5.0, (0, 1); min_prominence = 0.25)
+        @test h.index == [CartesianIndex(10, 10), CartesianIndex(20, 20),
+                          CartesianIndex(15, 16)]
+        @test h.value == [10.0, 7.0, 6.5]
+        @test h.prominence == [Inf, 1.0, 0.5]
+        h = findhits(fdr2, 5.0, (0, 1); min_prominence = 0.75)
+        @test h.index == [CartesianIndex(10, 10), CartesianIndex(20, 20)]
+        @test all(h.prominence .>= 0.75)  # re-filter reproduces the set
+
+        # dist = 2 bridges a single-pixel gap; dist = 1 does not
+        fdr6 = zeros(20, 20)
+        fdr6[5, 5] = 9.0
+        fdr6[6, 6] = 6.0
+        fdr6[8, 8] = 8.0
+        h = findhits(fdr6, 5.0, (0, 1); min_prominence = 1.0)
+        @test h.index == [CartesianIndex(5, 5), CartesianIndex(8, 8)]
+        @test h.prominence == [Inf, 2.0]
+        h = findhits(fdr6, 5.0, (0, 1); dist = 1)
+        @test h.index == [CartesianIndex(5, 5), CartesianIndex(8, 8)]
+        @test h.prominence == [Inf, Inf]
+
+        # Sigma-domain stats: threshold/min_prominence denormalize as
+        # t*s + m and p*s; columns normalize as (v - m)/s
+        h = findhits(fdr, 2.0, (1.0, 2.0); min_prominence = 0.25)
+        @test h.index == [CartesianIndex(10, 10), CartesianIndex(20, 20)]
+        @test h.value == [(10.0 - 1) / 2, (7.0 - 1) / 2]
+        @test h.prominence == [Inf, (7.0 - 6.0) / 2]
+
+        # Ties: isolated equal peaks both survive, ordered by index;
+        # an adjacent equal plateau is a single hit
+        fdr3 = zeros(20, 20)
+        fdr3[5, 5] = 8.0
+        fdr3[15, 15] = 8.0
+        h = findhits(fdr3, 5.0, (0, 1))
+        @test h.index == [CartesianIndex(5, 5), CartesianIndex(15, 15)]
+        @test h.prominence == [Inf, Inf]
+        fdr4 = zeros(10, 10)
+        fdr4[5, 5] = 8.0
+        fdr4[5, 6] = 8.0
+        @test findhits(fdr4, 5.0, (0, 1)).index == [CartesianIndex(5, 5)]
+
+        # No proto-hits
+        h = findhits(zeros(10, 10), 5.0, (0, 1))
+        @test isempty(h.index) && isempty(h.value) && isempty(h.prominence)
+
+        # Iterable of drift-rate adjacent matrices with column offsets
+        f1 = zeros(10, 5)
+        f1[3, 2] = 9.0
+        f2 = zeros(10, 5)
+        f2[4, 3] = 8.0
+        h = findhits([f1, f2], 5.0, (0, 1); min_prominence = 0.5)
+        @test h.index == [CartesianIndex(3, 2), CartesianIndex(4, 8)]
+        @test h.value == [9.0, 8.0]
+
+        # Robust default statistics (noise-like data with a real peak).
+        # Exponential tails legitimately give many hits at low sigma
+        # (P(Exp > 4) ~ 1.8%), so use a high threshold for the swarm check
+        hd = randexp(hrng, Float64, 100, 80)
+        hd[10, 10] = 50.0
+        h = findhits(hd, 3.0)
+        @test h.index[1] == CartesianIndex(10, 10)
+        h = findhits(hd, 8.0)
+        @test h.index == [CartesianIndex(10, 10)]
+
+        # Invalid stats/dist
+        @test_throws ArgumentError findhits(fdr, 5.0, (0, 0))
+        @test_throws ArgumentError findhits(fdr, 5.0, (0, 1); dist = 0)
+    end
+
     @testset "fdrstats" begin
         # taylorfdr drift blocks with out-of-band drift produce all-zero
         # columns; fdrstats must ignore them (fdrnormalize! used to divide by
@@ -585,6 +681,70 @@ include("taylorreference.jl")
                       quantile(vec(gi), [0.25, 0.75])
                 @test_throws ArgumentError fast_quantile(
                     CuArray([1.0f0, NaN32, 3.0f0]), [0.5])
+            end
+
+            @testset "findhits [CUDA]" begin
+                # Same fixture as the CPU findhits testset; exact parity
+                fdr = zeros(50, 60)
+                fdr[10, 10] = 10.0
+                for k in 11:19
+                    fdr[k, k] = 6.0f0
+                end
+                fdr[20, 20] = 7.0
+                fdr[15, 16] = 6.5
+                gfdr = CuArray(Float32.(fdr))
+                hf = findhits(fdr, 5.0f0, (0, 1); min_prominence = 0.25)
+                hg = findhits(gfdr, 5.0f0, (0, 1); min_prominence = 0.25)
+                @test hg.index == hf.index
+                @test hg.value == hf.value
+                @test hg.prominence == hf.prominence
+
+                # Merging across the 32x32 tile seam: same geometry as the
+                # CPU fdr6 fixture, translated so the cluster straddles the
+                # edge of tile (1, 1) and the secondary peaks are gathered
+                # from the partial 8x8 tile (2, 2)
+                fseam = zeros(40, 40)
+                fseam[32, 32] = 9.0
+                fseam[33, 33] = 6.0
+                fseam[35, 35] = 8.0
+                hsf = findhits(fseam, 5.0, (0, 1); min_prominence = 1.0)
+                hsg = findhits(CuArray(Float32.(fseam)), 5.0f0, (0, 1);
+                               min_prominence = 1.0)
+                @test hsf.index == [CartesianIndex(32, 32), CartesianIndex(35, 35)]
+                @test hsf.value == [9.0, 8.0]
+                @test hsf.prominence == [Inf, 2.0]
+                @test hsg.index == hsf.index
+                @test hsg.value == hsf.value
+                @test hsg.prominence == hsf.prominence
+
+                # A hit in every corner-tile kind of the 2x2 tiling of the
+                # 50x60 fixture: full, partial-width, partial-height, and
+                # the final tile's last element
+                fedge = zeros(50, 60)
+                fedge[10, 10] = 8.0
+                fedge[10, 60] = 7.0
+                fedge[50, 10] = 6.0
+                fedge[50, 60] = 5.5
+                hef = findhits(fedge, 5.0, (0, 1))
+                heg = findhits(CuArray(Float32.(fedge)), 5.0f0, (0, 1))
+                @test hef.index == [CartesianIndex(10, 10), CartesianIndex(10, 60),
+                                    CartesianIndex(50, 10), CartesianIndex(50, 60)]
+                @test hef.value == [8.0, 7.0, 6.0, 5.5]
+                @test hef.prominence == [Inf, Inf, Inf, Inf]
+                @test heg.index == hef.index
+                @test heg.value == hef.value
+                @test heg.prominence == hef.prominence
+
+                # Robust default statistics through the GPU noisefloor path
+                rngg = MersenneTwister(13)
+                gd = randexp(rngg, Float32, 200, 150)
+                gd[10, 10] = 100
+                h = findhits(CuArray(gd), 3.0f0)
+                @test h.index[1] == CartesianIndex(10, 10)
+
+                # No proto-hits
+                h = findhits(CuArray(zeros(Float32, 64, 64)), 5.0f0, (0, 1))
+                @test isempty(h.index) && isempty(h.prominence)
             end
         else
             @info "Skipping CUDA tests: no functional GPU available"
