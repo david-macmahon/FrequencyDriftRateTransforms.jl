@@ -5,27 +5,15 @@ using Statistics
 import FrequencyDriftRateTransforms: plan_ffts!, ZDTWorkspace, zdtoutput!,
                                      fdrsynchronize, taylortree!
 
-if isdefined(Base, :get_extension)
-    import FFTW
-    import CUDA
-    using CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuDeviceArray, CuDeviceVector,
-                CuVector, CuStaticSharedArray, synchronize, @cuda, @atomic,
-                blockIdx, threadIdx, blockDim, gridDim, sync_threads
-    using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
-    # Import CUDA functions for optimizing workarea usage
-    import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
-                       update_stream, cufftExecC2R
-else
-    import FFTW
-    import ..CUDA
-    using ..CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuDeviceArray, CuDeviceVector,
-                  CuVector, CuStaticSharedArray, synchronize, @cuda, @atomic,
-                  blockIdx, threadIdx, blockDim, gridDim, sync_threads
-    using ..CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
-    # Import CUDA functions for optimizing workarea usage
-    import ..CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
-                         update_stream, cufftExecC2R
-end
+import FFTW
+import CUDA
+using CUDA: CuArray, CuMatrix, CuDeviceMatrix, CuDeviceArray, CuDeviceVector,
+            CuVector, CuStaticSharedArray, synchronize, @cuda, @atomic,
+            blockIdx, threadIdx, blockDim, gridDim, sync_threads
+using CUDA.CUFFT: plan_fft!, plan_ifft!, plan_rfft, plan_irfft
+# Import CUDA functions for optimizing workarea usage
+import CUDA.CUFFT: cufftGetSize, cufftSetWorkArea,
+                   update_stream, cufftExecC2R
 
 """
     fdrsynchronize(::Type{<:CuArray})

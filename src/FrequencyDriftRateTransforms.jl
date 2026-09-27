@@ -40,20 +40,6 @@ export preprocess!, convolve!, postprocess!  # deprecated
 # zdtutils.jl, batchrates.jl
 export calcNl, growNr, estimate_memory, driftrates, batchrates
 
-# For Julia < 1.9.0
-if !isdefined(Base, :get_extension)
-    # Add DataFrame constructor for Vector{Filterbank.Header} if/when DataFrames
-    # is imported.
-    using Requires
-end
-@static if !isdefined(Base, :get_extension)
-    function __init__()
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" begin
-            include("../ext/CUDAFrequencyDriftRateTransformsExt.jl")
-        end
-    end
-end
-
 include("batchrates.jl")
 include("fastquantile.jl")
 include("noisefloor.jl")
