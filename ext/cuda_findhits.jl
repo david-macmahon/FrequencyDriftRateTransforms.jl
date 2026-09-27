@@ -35,7 +35,10 @@ function findhits(fdr::CuMatrix, threshold::Real,
     @cuda threads = 256 blocks = Ntx * Nty _tilemax!(tilemax, fdr, Nf, Nr, Ntx)
     candt = findall(>=(threshold_raw), Array(tilemax))
     isempty(candt) && return (index = CartesianIndex{2}[], value = Float64[],
-                              prominence = Float64[])
+                              prominence = Float64[], nhits = Int[],
+                              lochan = Int[], hichan = Int[],
+                              lorateidx = Int[], hirateidx = Int[],
+                              hitwidth = Int[])
     candlin = [LinearIndices(tilemax)[c] for c in candt]
     cand = CuVector{Int}(candlin)
     out = CuMatrix{eltype(fdr)}(undef, _findhits_tile^2, length(candlin))

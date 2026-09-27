@@ -278,7 +278,26 @@ hits = findhits(fdr, 5.0; min_prominence = 1.5) # + persistence filtering
 hits.index        # Vector{CartesianIndex{2}} of hit peaks
 hits.value        # peak value of each hit, in sigma units (z-score)
 hits.prominence   # prominence of each hit, in sigma units
+hits.nhits        # number of proto-hits in each hit's footprint
+hits.lochan       # lowest frequency row (channel) of the footprint
+hits.hichan       # highest frequency row (channel) of the footprint
+hits.lorateidx    # lowest drift-rate column index of the footprint
+hits.hirateidx    # highest drift-rate column index of the footprint
+hits.hitwidth     # drift-axis run extent of the hit (see below)
 ```
+
+Each hit also reports *footprint* info: the set of above-threshold
+proto-hits its peak dominates (the whole connected region for region maxima;
+the portion merged away at the retirement saddle for secondary peaks),
+summarized by `nhits` and the frequency-row (`lochan`/`hichan`) and
+drift-rate-column (`lorateidx`/`hirateidx`) extrema.  The `hitwidth` field
+is the extent (in frequency rows) of the maximal chain of the footprint's
+proto-hits in the hit's own drift-rate column, anchored at the hit's row,
+where consecutive chain members are within `dist` rows (so the chain never
+leaves the footprint; bridged gap rows count toward the extent).  It
+measures how localized the hit is along the drift axis at its own frequency
+— the narrow "waist" of the butterfly pattern — and an isolated hit has
+`hitwidth = 1`.
 
 Everything is expressed in *sigma* units by default: the threshold, the
 optional `min_prominence`, and the returned `value`/`prominence` columns.

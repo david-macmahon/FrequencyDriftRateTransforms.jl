@@ -325,6 +325,8 @@ include("taylorreference.jl")
         h = findhits(fdr6, 5.0, (0, 1); dist = 1)
         @test h.index == [CartesianIndex(5, 5), CartesianIndex(8, 8)]
         @test h.prominence == [Inf, Inf]
+        @test h.nhits == [2, 1]
+        @test h.hitwidth == [1, 1]
 
         # Sigma-domain stats: threshold/min_prominence denormalize as
         # t*s + m and p*s; columns normalize as (v - m)/s
@@ -358,6 +360,45 @@ include("taylorreference.jl")
         h = findhits([f1, f2], 5.0, (0, 1); min_prominence = 0.5)
         @test h.index == [CartesianIndex(3, 2), CartesianIndex(4, 8)]
         @test h.value == [9.0, 8.0]
+        @test h.nhits == [1, 1]
+        @test h.lochan == [3, 4] && h.hichan == [3, 4]
+        @test h.lorateidx == [2, 8] && h.hirateidx == [2, 8]  # column-offset
+        @test h.hitwidth == [1, 1]
+
+        # Footprints: the root reports its whole (final) region; a secondary
+        # peak reports the portion merged away at its retirement saddle
+        h = findhits(fdr, 5.0, (0, 1))
+        @test h.nhits == [11]                       # peak + 9-arm cells + B
+        @test h.lochan == [10] && h.hichan == [20]
+        @test h.lorateidx == [10] && h.hirateidx == [20]
+        @test h.hitwidth == [1]                     # hit's column has only it
+        h = findhits(fdr, 5.0, (0, 1); min_prominence = 0.5)
+        @test h.nhits == [11, 1]                    # B retires alone
+        @test h.lochan == [10, 20] && h.hichan == [20, 20]
+        @test h.lorateidx == [10, 20] && h.hirateidx == [20, 20]
+        @test h.hitwidth == [1, 1]
+
+        # hitwidth: contiguous run of above-threshold cells in the hit's own
+        # drift-rate column, anchored at the hit, with consecutive members
+        # within `dist` rows; component members in other columns and runs
+        # beyond a too-wide gap don't count
+        fdrw = zeros(30, 10)
+        j = 4
+        fdrw[10, j] = 9.0    # peak; run rows 10..15 (consecutive steps <= 2)
+        fdrw[12, j] = 6.0    # gap at 11 bridged (step 2 <= dist)
+        fdrw[13, j] = 6.0
+        fdrw[15, j] = 6.0    # gap at 14 bridged (step 2 <= dist)
+        fdrw[17, j + 1] = 6.0
+        fdrw[19, j + 1] = 6.0
+        fdrw[20, j] = 6.0    # rejoins the region via (19, j+1), but the run
+                             # stops: (15, j) -> (20, j) is a step of 5
+        fdrw[25, j] = 7.0    # separate region; must not stretch anything
+        h = findhits(fdrw, 5.0, (0, 1))
+        @test h.index == [CartesianIndex(10, j), CartesianIndex(25, j)]
+        @test h.nhits == [7, 1]
+        @test h.lochan == [10, 25] && h.hichan == [20, 25]
+        @test h.lorateidx == [j, j] && h.hirateidx == [j + 1, j]
+        @test h.hitwidth == [6, 1]
 
         # Robust default statistics (noise-like data with a real peak).
         # Exponential tails legitimately give many hits at low sigma
@@ -698,6 +739,13 @@ include("taylorreference.jl")
                 @test hg.index == hf.index
                 @test hg.value == hf.value
                 @test hg.prominence == hf.prominence
+                @test hg.nhits == hf.nhits == [12, 1, 1]
+                @test hg.lochan == hf.lochan
+                @test hg.hichan == hf.hichan
+                @test hg.lorateidx == hf.lorateidx
+                @test hg.hirateidx == hf.hirateidx
+                @test hg.hitwidth == hf.hitwidth == [1, 1, 2]  # wiggle's column
+                # also contains the arm cell (16, 16), one row below it
 
                 # Merging across the 32x32 tile seam: same geometry as the
                 # CPU fdr6 fixture, translated so the cluster straddles the
@@ -713,9 +761,17 @@ include("taylorreference.jl")
                 @test hsf.index == [CartesianIndex(32, 32), CartesianIndex(35, 35)]
                 @test hsf.value == [9.0, 8.0]
                 @test hsf.prominence == [Inf, 2.0]
+                @test hsf.nhits == [3, 1]       # peak B retires alone
+                @test hsf.lochan == [32, 35] && hsf.hichan == [35, 35]
+                @test hsf.lorateidx == [32, 35] && hsf.hirateidx == [35, 35]
+                @test hsf.hitwidth == [1, 1]
                 @test hsg.index == hsf.index
                 @test hsg.value == hsf.value
                 @test hsg.prominence == hsf.prominence
+                @test hsg.nhits == hsf.nhits
+                @test hsg.lochan == hsf.lochan && hsg.hichan == hsf.hichan
+                @test hsg.lorateidx == hsf.lorateidx && hsg.hirateidx == hsf.hirateidx
+                @test hsg.hitwidth == hsf.hitwidth
 
                 # A hit in every corner-tile kind of the 2x2 tiling of the
                 # 50x60 fixture: full, partial-width, partial-height, and
@@ -731,9 +787,12 @@ include("taylorreference.jl")
                                     CartesianIndex(50, 10), CartesianIndex(50, 60)]
                 @test hef.value == [8.0, 7.0, 6.0, 5.5]
                 @test hef.prominence == [Inf, Inf, Inf, Inf]
+                @test hef.nhits == [1, 1, 1, 1]
+                @test hef.hitwidth == [1, 1, 1, 1]
                 @test heg.index == hef.index
                 @test heg.value == hef.value
                 @test heg.prominence == hef.prominence
+                @test heg.nhits == hef.nhits && heg.hitwidth == hef.hitwidth
 
                 # Robust default statistics through the GPU noisefloor path
                 rngg = MersenneTwister(13)
@@ -745,6 +804,7 @@ include("taylorreference.jl")
                 # No proto-hits
                 h = findhits(CuArray(zeros(Float32, 64, 64)), 5.0f0, (0, 1))
                 @test isempty(h.index) && isempty(h.prominence)
+                @test isempty(h.nhits) && isempty(h.hitwidth)
             end
         else
             @info "Skipping CUDA tests: no functional GPU available"
