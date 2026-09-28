@@ -7,8 +7,11 @@ export fast_quantile
 export noisefloor
 
 # fdrutils.jl
-export create_fdr, fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
+export create_fdr, noisestats, noisenormalize!, noisenormalize
+export noisedenormalize
 export findprotohits
+# deprecated (soft) aliases for the noise* names
+export fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
 
 # findhits.jl
 export findhits

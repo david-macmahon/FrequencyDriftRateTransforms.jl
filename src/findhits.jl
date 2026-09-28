@@ -19,7 +19,7 @@
 
 """
     findhits(fdr::AbstractMatrix, threshold::Real,
-             stats = fdrstats(fdr; robust = true);
+             stats = noisestats(fdr);
              min_prominence = nothing, dist = 2)
         -> (; index, value, prominence, nhits, lochan, hichan,
             lorateidx, hirateidx, hitwidth)
@@ -55,21 +55,32 @@ NamedTuple with (columnar) fields:
   has `hitwidth = 1`.
 
 Thresholding and normalization are expressed in *sigma* (SNR) units via the
-`stats` pair `(m, s)` (default: `fdrstats(fdr; robust = true)`, the
-noise-floor-based statistics recommended for thresholding; see
-[`fdrstats`](@ref) and [`noisefloor`](@ref)).  `threshold` is a level and is
-denormalized as `threshold*s + m` (as by [`fdrdenormalize`](@ref)), whereas
+`stats` pair `(m, s)` (default: `noisestats(fdr)`, the noise-floor-based
+statistics recommended for thresholding; see [`noisestats`](@ref) and
+[`noisefloor`](@ref)).  `threshold` is a level and is denormalized as
+`threshold*s + m` (as by [`noisedenormalize`](@ref)), whereas
 `min_prominence` is a difference and is denormalized as `min_prominence*s`
 (the mean cancels in any difference of levels).  The same `(m, s)` pair
 normalizes the returned columns, so `hits.value .>= threshold` and
 `hits.prominence .>= min_prominence` reproduce the internal criteria.
+
+The `stats` pair may also be given as a pair of *vectors*, both of length
+`size(fdr, 1)` (one entry per frequency channel; e.g. from
+`noisestats(fdr; chans_per_band = ...)`).  Thresholding then compares each
+channel `i` against `threshold*s[i] + m[i]` (per-channel thresholds), the
+returned `value` and `prominence` columns are normalized with the hit's own
+channel's `(m, s)`, and `min_prominence` filters each hit against
+`min_prominence*s[i]` of its own channel.  Scalar and vector forms cannot be
+mixed.  For CuArrays, per-channel thresholds make the GPU tile filtering
+conservative (tiles are compared against the minimum threshold of their
+channels), so results match the CPU method exactly.
 
 The special pair `stats = (0, 1)` disables normalization entirely:
 `threshold` and `min_prominence` are interpreted as *raw FDR values* (not
 sigma units), and the returned `value` and `prominence` are likewise raw
 FDR values (`value` is identical to `fdr[index]`, `prominence` is
 `peak - saddle`).  This is the escape hatch for workflows that precompute
-raw thresholds (e.g. via `fdrdenormalize` with robust statistics):
+raw thresholds (e.g. via `noisedenormalize` with robust statistics):
 
 ```julia
 hits = findhits(fdr, threshold_raw, (0, 1); min_prominence = prominence_raw)
@@ -98,20 +109,35 @@ For a single FDR matrix the hits are sorted by descending `value` (ties by
 index); for an iterable they are in batch order (each batch sorted).
 """
 function findhits(fdr::AbstractMatrix, threshold::Real,
-                  stats = fdrstats(fdr; robust = true);
+                  stats = noisestats(fdr);
                   min_prominence = nothing, dist = 2)
     m, s = _findhits_stats(stats)
     dist >= 1 || throw(ArgumentError("dist must be at least 1"))
-    threshold_raw = threshold * s + m
-    min_prom_raw = min_prominence === nothing ? nothing : min_prominence * s
-    protohijs = findall(>=(threshold_raw), fdr)
+    nrows = size(fdr, 1)
+    if m isa AbstractVector
+        length(m) == nrows || throw(ArgumentError(
+            "stats vector length ($(length(m))) must match the number of " *
+            "frequency channels ($nrows)"))
+        # Per-channel (raw) thresholds; row-wise comparison avoids a
+        # full-matrix Boolean temporary.
+        thr = m .+ threshold .* s
+        protohijs = CartesianIndex{2}[]
+        for i in 1:nrows
+            append!(protohijs, (CartesianIndex(i, j) for j in
+                                findall(>=(thr[i]), @view fdr[i, :])))
+        end
+    else
+        threshold_raw = threshold * s + m
+        protohijs = findall(>=(threshold_raw), fdr)
+    end
     vals = [Float64(fdr[hij]) for hij in protohijs]
-    nrows, ncols = size(fdr)
-    _findhits_result(vals, protohijs, nrows, ncols, m, s, min_prom_raw, dist)
+    minprom = min_prominence === nothing ? nothing :
+              m isa AbstractVector ? min_prominence .* s : min_prominence * s
+    _findhits_result(vals, protohijs, nrows, size(fdr, 2), m, s, minprom, dist)
 end
 
 function findhits(fdrs, threshold::Real,
-                  stats = fdrstats(fdrs; robust = true);
+                  stats = noisestats(fdrs);
                   min_prominence = nothing, dist = 2)
     m, s = _findhits_stats(stats)
     dist >= 1 || throw(ArgumentError("dist must be at least 1"))
@@ -145,34 +171,63 @@ function findhits(fdrs, threshold::Real,
 end
 
 # Validate and unpack the (m, s) normalization pair (any 2-iterable, e.g.
-# the NamedTuple returned by `fdrstats`).
+# the NamedTuple returned by `noisestats`): both scalars, or both vectors
+# of equal length (per-channel statistics; the length is checked against
+# the matrix in `findhits`).
 function _findhits_stats(stats)
     m, s = stats
+    if m isa AbstractVector || s isa AbstractVector
+        (m isa AbstractVector && s isa AbstractVector) || throw(ArgumentError(
+            "stats mean and std must both be scalars or both be vectors"))
+        length(m) == length(s) || throw(ArgumentError(
+            "stats mean and std vectors must have equal lengths " *
+            "($(length(m)) vs $(length(s)))"))
+        all(>(0), s) || throw(ArgumentError(
+            "stats standard deviation values must be positive"))
+        return m, s
+    end
     s > 0 || throw(ArgumentError("stats standard deviation must be positive (got $s)"))
     return Float64(m), Float64(s)
 end
 
+# The empty findhits result (also used by the CUDA method's no-proto-hits
+# early return).
+_findhits_empty() = (index = CartesianIndex{2}[], value = Float64[],
+                     prominence = Float64[], nhits = Int[],
+                     lochan = Int[], hichan = Int[],
+                     lorateidx = Int[], hirateidx = Int[], hitwidth = Int[])
+
 # Assemble the sigma-domain result from the proto-hits and their (raw)
-# values: run the merge-tree sweep and normalize the columns.
+# values: run the merge-tree sweep and normalize the columns.  `m` and `s`
+# are scalars or per-channel vectors; `min_prom_raw` is `nothing`, a scalar
+# raw threshold, or a per-channel raw-threshold vector.
 function _findhits_result(vals::Vector{Float64}, protohijs::Vector{CartesianIndex{2}},
-                          nrows::Int, ncols::Int, m::Float64, s::Float64,
-                          min_prom_raw::Union{Nothing, Float64}, dist::Int)
-    isempty(protohijs) && return (index = CartesianIndex{2}[], value = Float64[],
-                                  prominence = Float64[], nhits = Int[],
-                                  lochan = Int[], hichan = Int[],
-                                  lorateidx = Int[], hirateidx = Int[],
-                                  hitwidth = Int[])
+                          nrows::Int, ncols::Int, m, s,
+                          min_prom_raw, dist::Int)
+    isempty(protohijs) && return _findhits_empty()
     lijs = [hij[1] + (hij[2] - 1) * nrows for hij in protohijs]
+    # Per-proto-hit (raw) min_prominence thresholds when `s` is a vector:
+    # each hit is filtered against `min_prominence` of its own channel.
+    minprom_ord = min_prom_raw === nothing ? nothing :
+                  min_prom_raw isa AbstractVector ?
+                  Float64[min_prom_raw[(lij - 1) % nrows + 1] for lij in lijs] :
+                  min_prom_raw
     idxs, proms_raw, nhits, lois, hais, lojs, hajs, hws =
-        _findhits_sweep(vals, lijs, nrows, ncols, dist, min_prom_raw)
+        _findhits_sweep(vals, lijs, nrows, ncols, dist, minprom_ord)
     index = protohijs[idxs]
-    value = [(vals[i] - m) / s for i in idxs]
-    prominence = [prom / s for prom in proms_raw]
+    rows = [(lijs[idx] - 1) % nrows + 1 for idx in idxs]
+    value = [(vals[idx] - _statat(m, row)) / _statat(s, row)
+             for (idx, row) in zip(idxs, rows)]
+    prominence = [prom / _statat(s, row)
+                  for (prom, idx, row) in zip(proms_raw, idxs, rows)]
     ord = sortperm(eachindex(idxs), by = k -> (-value[k], lijs[idxs[k]]))
     return (index = index[ord], value = value[ord], prominence = prominence[ord],
             nhits = nhits[ord], lochan = lois[ord], hichan = hais[ord],
             lorateidx = lojs[ord], hirateidx = hajs[ord], hitwidth = hws[ord])
 end
+
+# Statistics lookup by channel: vectors index, scalars broadcast.
+_statat(x, row) = x isa AbstractVector ? x[row] : x
 
 # Decreasing-value union-find sweep over the proto-hits (a merge-tree
 # construction).  `vals`/`lijs` are the (raw) values and linear indices of
@@ -182,7 +237,8 @@ end
 # extrema of the component (at retirement time for retired peaks, final for
 # roots), plus the hit's drift-axis run extent (see `_run_extent`).
 function _findhits_sweep(vals::Vector{Float64}, lijs::Vector{Int}, nrows::Int,
-                         ncols::Int, dist::Int, min_prom::Union{Nothing, Float64})
+                         ncols::Int, dist::Int,
+                         min_prom::Union{Nothing, Float64, Vector{Float64}})
     n = length(vals)
     order = sortperm(1:n, by = i -> (-vals[i], lijs[i]))
     parent = collect(1:n)
@@ -247,14 +303,20 @@ function _findhits_sweep(vals::Vector{Float64}, lijs::Vector{Int}, nrows::Int,
                 lo, hi = ra, rb
             end
             persist = peakval[lo] - v
-            if min_prom !== nothing && persist > 0 && persist >= min_prom
-                push!(retired_site, peakord[lo])
-                push!(retired_prom, persist)
-                push!(retired_nhits, size[lo])
-                push!(retired_lorow, lorow[lo])
-                push!(retired_harow, harow[lo])
-                push!(retired_locol, locol[lo])
-                push!(retired_hacol, hacol[lo])
+            if min_prom !== nothing && persist > 0
+                # With per-channel stats, each peak is filtered against the
+                # min_prominence of its own channel (see `_findhits_result`)
+                promthr = min_prom isa AbstractVector ?
+                          min_prom[peakord[lo]] : min_prom
+                if persist >= promthr
+                    push!(retired_site, peakord[lo])
+                    push!(retired_prom, persist)
+                    push!(retired_nhits, size[lo])
+                    push!(retired_lorow, lorow[lo])
+                    push!(retired_harow, harow[lo])
+                    push!(retired_locol, locol[lo])
+                    push!(retired_hacol, hacol[lo])
+                end
             end
             # Merge footprint accumulators and member lists into the survivor
             size[hi] += size[lo]

@@ -36,10 +36,10 @@ values greater a certain threshold.  Usually the threshold is given as a
 *signal-to-noise ratio* (SNR), which is essentially a number of standard
 deviations above the mean of the FDR values.  The `findprotohits` function can
 be used to find such points.  FDR values can be normalized via the
-`fdrnormalize!` function which subtracts the mean and divides by the standard
+`noisenormalize!` function which subtracts the mean and divides by the standard
 deviation.  This can be useful for plotting so that the displayed values are SNR
 values, but for searching it is much more efficient to denormalize the single
-SNR threshold via the `fdrdenormalize` function, which multiplies the SNR value
+SNR threshold via the `noisedenormalize` function, which multiplies the SNR value
 by the standard deviation of the FDR and then adds the mean of the FDR.  The
 denormalized SNR value can then be used as the threshold with the non-normalized
 FDR values.  This latter approach can also be performed as part of
@@ -144,37 +144,60 @@ and clustered into hits:
 ws = ZDTWorkspace(spectrogram, first(batches))
 for rates in batches
     fdr = zdtfdr(ws; r0 = first(rates))
-    m, s = fdrstats(fdr)
-    hijs = findprotohits(fdr, fdrdenormalize(5.0, m, s))
+    m, s = noisestats(fdr)
+    hijs = findprotohits(fdr, noisedenormalize(5.0, m, s))
     # ... process hijs (see "Finding hits" below) ...
 end
 ```
 
-Note the use of `fdrdenormalize` to denormalize the SNR threshold (5 sigma
-here) rather than normalizing the whole FDR matrix via `fdrnormalize!`; for
+Note the use of `noisedenormalize` to denormalize the SNR threshold (5 sigma
+here) rather than normalizing the whole FDR matrix via `noisenormalize!`; for
 searching, denormalizing the single threshold value is more efficient (see
-[`fdrdenormalize`](@ref)).  The [`findhits`](@ref) function (see
+[`noisedenormalize`](@ref)).  The [`findhits`](@ref) function (see
 [Finding hits](@ref)) clusters the proto-hits into hits directly, taking the
 SNR threshold and statistics itself.
 
 ## Noise floor estimation
 
-The mean and standard deviation used for thresholding (see [`fdrstats`](@ref))
-are plain statistics, so a single bright signal inflates them and raises every
-threshold.  The [`noisefloor`](@ref) function estimates the noise floor power
-robustly instead: it models the data as the sum of two independent Gamma
+The mean and standard deviation used for thresholding (see [`noisestats`](@ref))
+would be plain statistics, so a single bright signal inflates them and raises
+every threshold.  The [`noisefloor`](@ref) function estimates the noise floor
+power robustly instead: it models the data as the sum of two independent Gamma
 distributed polarizations (the natural distribution of integrated power
 samples) and anchors the estimate on signal-free quantiles (the `qlo`
 quantile, 10% by default, and the median).  The estimated mean stays within a
 few percent of the true noise floor even at contamination fractions of order
 15% (where it biases high by ~3%), while the plain mean is already badly
-biased at a 1% contamination fraction.  Pass `robust = true` to `fdrstats` to
-use it for thresholding:
+biased at a 1% contamination fraction.  `noisestats` is robust by default
+(pass `robust = false` for the plain statistics):
 
 ```julia
-m, s = fdrstats(fdr; robust = true, k = k * Nt)
-hijs = findprotohits(fdr, fdrdenormalize(5.0, m, s))
+m, s = noisestats(fdr; k = k * Nt)
+hijs = findprotohits(fdr, noisedenormalize(5.0, m, s))
 ```
+
+Per-channel noise statistics (e.g. to compensate for bandpass structure or
+channel-dependent RFI) are supported via `chans_per_band`, which must evenly
+divide the number of channels: the statistics are then estimated per band of
+`chans_per_band` frequency channels and returned as vectors of length
+`size(fdr, 1)`, which [`findhits`](@ref) consumes as
+per-channel thresholds and normalizations:
+
+```julia
+m, s = noisestats(fdr; chans_per_band = 32, k = k * Nt)  # vectors
+hits = findhits(fdr, 5.0, (m, s))
+```
+
+Banding is the robust choice whenever the noise power varies along the
+frequency axis — e.g. power-level variations across a coarse channel's
+passband that survive the analytic filter-response correction: one estimate
+for the whole channel is then biased wherever the power differs, while
+per-band estimates track the variation.  Pick the band width small enough
+that the variation within a band is negligible, and large enough to pool
+many samples (e.g. 16K channels, ≈ 48 kHz for a ~2.9 Hz channelization).
+On CUDA, the robust per-band estimates are computed in a fixed handful of
+batched device passes, at a cost independent of the number of bands; on the
+host, each band is estimated independently.
 
 When `k` is known, `noisefloor` also reports the per-polarization mean powers
 (`pol1`, `pol2`, `polratio`); without it, only the effective shape of the
@@ -301,7 +324,7 @@ measures how localized the hit is along the drift axis at its own frequency
 
 Everything is expressed in *sigma* units by default: the threshold, the
 optional `min_prominence`, and the returned `value`/`prominence` columns.
-The normalization pair `(m, s)` is `fdrstats(fdr; robust = true)` by
+The normalization pair `(m, s)` is `noisestats(fdr)` by
 default (the noise-floor statistics recommended for thresholding; see
 [Noise floor estimation](@ref)) and can be passed explicitly as the third
 positional argument — e.g. to share one pair across all batches of a

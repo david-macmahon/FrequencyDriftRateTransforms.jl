@@ -26,6 +26,8 @@ end
 
 include("cuda_fastquantile.jl")
 include("cuda_findhits.jl")
+include("cuda_fdrutils.jl")
+include("cuda_noisefloor.jl")
 
 """
     plan_ffts!(workspace::ZDTWorkspace, spectrogram::CuMatrix{<:Real};
