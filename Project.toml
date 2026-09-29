@@ -1,6 +1,6 @@
 name = "FrequencyDriftRateTransforms"
 uuid = "fb9f5a76-33a9-4170-a29d-c7447c215bd7"
-version = "0.9.0"
+version = "0.10.0"
 authors = ["David MacMahon <davidm@astro.berkeley.edu> and contributors"]
 
 [deps]
