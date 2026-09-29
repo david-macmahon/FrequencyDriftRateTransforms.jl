@@ -1,17 +1,26 @@
 module FrequencyDriftRateTransforms
 
-# fastquantile.jl
+# The exact-quantile and noise-statistics machinery lives in FastQuantiles.jl
+# and NoiseEstimators.jl, re-exported here.
+using FastQuantiles: fast_quantile
+using NoiseEstimators: noisefloor, noisestats, noisenormalize!, noisenormalize,
+                       noisedenormalize
+using Statistics
+
+# fast_quantile — provided by FastQuantiles.jl and re-exported
 export fast_quantile
 
-# noisefloor.jl
+# noisefloor — provided by NoiseEstimators.jl and re-exported
 export noisefloor
 
-# fdrutils.jl
-export create_fdr, noisestats, noisenormalize!, noisenormalize
+# fdrutils.jl — noise statistics provided by NoiseEstimators.jl, re-exported
+export create_fdr
+export noisestats, noisenormalize!, noisenormalize
 export noisedenormalize
 export findprotohits
+export fdrstats  # FDRT's FDR-specific statistics (see its docstring)
 # deprecated (soft) aliases for the noise* names
-export fdrstats, fdrnormalize!, fdrnormalize, fdrdenormalize
+export fdrnormalize!, fdrnormalize, fdrdenormalize
 
 # findhits.jl
 export findhits
@@ -44,8 +53,6 @@ export preprocess!, convolve!, postprocess!  # deprecated
 export calcNl, growNr, estimate_memory, driftrates, batchrates
 
 include("batchrates.jl")
-include("fastquantile.jl")
-include("noisefloor.jl")
 include("fdrutils.jl")
 include("findhits.jl")
 include("intfdr.jl")

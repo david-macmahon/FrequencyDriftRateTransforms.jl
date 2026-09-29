@@ -56,9 +56,9 @@ NamedTuple with (columnar) fields:
 
 Thresholding and normalization are expressed in *sigma* (SNR) units via the
 `stats` pair `(m, s)` (default: `noisestats(fdr)`, the noise-floor-based
-statistics recommended for thresholding; see [`noisestats`](@ref) and
-[`noisefloor`](@ref)).  `threshold` is a level and is denormalized as
-`threshold*s + m` (as by [`noisedenormalize`](@ref)), whereas
+statistics recommended for thresholding; see `noisestats` and
+`noisefloor`).  `threshold` is a level and is denormalized as
+`threshold*s + m` (as by `noisedenormalize`), whereas
 `min_prominence` is a difference and is denormalized as `min_prominence*s`
 (the mean cancels in any difference of levels).  The same `(m, s)` pair
 normalizes the returned columns, so `hits.value .>= threshold` and

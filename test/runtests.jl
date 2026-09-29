@@ -1,5 +1,7 @@
 using FrequencyDriftRateTransforms
 using FrequencyDriftRateTransforms: taylorstep!
+using FastQuantiles
+using NoiseEstimators
 using Test
 using Statistics
 using Random
@@ -139,80 +141,12 @@ include("taylorreference.jl")
     @testset "noisefloor" begin
         nrng = MersenneTwister(42)
         # One polarization of one integrated sample: Gamma(k, θ), i.e. the
-        # sum of k unit-mean exponentials scaled by θ
+        # sum of k unit-mean exponentials scaled by θ.  (The generic
+        # estimation tests live in NoiseEstimators.jl's suite; these
+        # integration tests check the k * Nt convention on real transform
+        # output.)
         gamsamp(k, θ, n) = [θ * sum(randexp(nrng) for _ in 1:k) for _ in 1:n]
         twopol(k, θ1, θ2, n) = gamsamp(k, θ1, n) .+ gamsamp(k, θ2, n)
-
-        # Single-polarization limit (θ2 = 0): exactly one Gamma
-        for k in (1, 4)
-            nd = twopol(k, 1.0, 0.0, 1_000_000)
-            nfst = noisefloor(nd; k)
-            @test nfst.mean ≈ k rtol = 0.03
-            @test nfst.std ≈ sqrt(k) rtol = 0.03
-            @test nfst.shape ≈ k rtol = 0.1
-            @test nfst.pol1 + nfst.pol2 ≈ nfst.mean rtol = 1e-6
-            @test nfst.polratio > 10  # second polarization essentially dead
-        end
-
-        # Two imbalanced polarizations (θ1:θ2 = 1:2)
-        nd = twopol(4, 1/3, 2/3, 1_000_000)
-        nfst = noisefloor(nd; k = 4)
-        @test nfst.mean ≈ 4 * (1/3 + 2/3) rtol = 0.03
-        @test nfst.std ≈ sqrt(4 * (1/9 + 4/9)) rtol = 0.08
-        @test 1.4 < nfst.polratio < 3.5  # true ratio 2.0 (moment-based split)
-        @test nfst.pol1 > nfst.pol2 > 0
-
-        # The lower quantile `qlo` trades contamination robustness against
-        # clean-data efficiency; on clean data all reasonable values agree
-        for qlo in (0.05, 0.1, 0.2)
-            nfq = noisefloor(nd; k = 4, qlo)
-            @test nfq.mean ≈ 4 * (1/3 + 2/3) rtol = 0.05
-            @test nfq.std ≈ sqrt(4 * (1/9 + 4/9)) rtol = 0.1
-        end
-
-        # Equal polarizations: ratio 1 and effective shape 2k.  This sits
-        # exactly on the split-identification ceiling, so either a split
-        # near unity or NaN (unidentified) is acceptable
-        nde = twopol(4, 0.5, 0.5, 1_000_000)
-        nfst = noisefloor(nde; k = 4)
-        @test nfst.mean ≈ 4 rtol = 0.03
-        @test isnan(nfst.polratio) || abs(nfst.polratio - 1) < 0.3
-        @test nfst.shape ≈ 8 rtol = 0.1
-
-        # Signal contamination: 1% of bins at 100x the floor leave the
-        # estimate unbiased while the plain mean is badly biased
-        ndc = copy(nd)
-        ndc[1:10_000] .= 100 * 4
-        nfst = noisefloor(ndc; k = 4)
-        @test nfst.mean ≈ 4 rtol = 0.03
-        @test noisefloor(ndc; k = 4, refine = false).mean ≈ 4 rtol = 0.06
-        @test mean(ndc) > 7
-
-        # Auto-k mode: mean accurate, effective shape between k and 2k, and
-        # no per-polarization split
-        nfst = noisefloor(nd)
-        @test nfst.mean ≈ 4 rtol = 0.03
-        @test 4 < nfst.shape < 10
-        @test nfst.polratio === nothing
-        @test nfst.pol1 === nothing && nfst.pol2 === nothing
-
-        # Degenerate data mirrors the noisestats fallback semantics
-        @test noisefloor(zeros(100)) ==
-              (mean = 0.0, std = Inf, shape = nothing, polratio = nothing,
-               pol1 = nothing, pol2 = nothing)
-        @test noisefloor(fill(3.5, 100)) ==
-              (mean = 3.5, std = Inf, shape = nothing, polratio = nothing,
-               pol1 = nothing, pol2 = nothing)
-        @test_throws ArgumentError noisefloor(nd; k = 0)
-        @test_throws ArgumentError noisefloor(nd; qlo = 0)
-        @test_throws ArgumentError noisefloor(nd; qlo = 0.5)
-
-        # An unidentified split (data less variable than the model allows)
-        # is reported as NaN rather than a spurious balanced split
-        ndz = 1.0 .+ 1e-3 .* randexp(nrng, 1000)
-        nfz = noisefloor(ndz; k = 4)
-        @test isnan(nfz.polratio)
-        @test isnan(nfz.pol1) && isnan(nfz.pol2)
 
         # FDR matrices: a taylorfdr path sums Ntp spectrogram samples, so
         # the per-polarization shape is k * Ntp and the floor scales
@@ -231,51 +165,17 @@ include("taylorreference.jl")
         @test Ntt <= nfz.shape <= 2.5 * Ntt
     end
 
-    @testset "fast_quantile" begin
-        # The histogram-refinement selection must reproduce
-        # `Statistics.quantile` exactly, including types
-        qsel(x, ps) = fast_quantile(x, ps)
-        qrng = MersenneTwister(7)
-        for T in (Float32, Float64, Int64, Int32, Float16, UInt16)
-            for n in (1, 2, 3, 7, 100, 1000)
-                for kind in
-                    (T <: Integer ? (:rand, :ties, :ints) : (:rand, :randn, :ties))
-                    x = if kind === :rand
-                        rand(qrng, T, n)
-                    elseif kind === :randn
-                        randn(qrng, T, n)
-                    elseif kind === :ties
-                        T.(round.(rand(qrng, Float64, n) .* 5))
-                    else
-                        rand(qrng, 1:10, n) .% T
-                    end
-                    for ps in ([0.1, 0.5], [0.0, 0.05, 0.3, 0.5, 0.999, 1.0])
-                        @test qsel(x, ps) == quantile(vec(x), ps)
-                        @test typeof(qsel(x, ps)) == typeof(quantile(vec(x), ps))
-                    end
-                end
-            end
-        end
-        # Degenerate and extreme values
-        for x in (fill(3.0, 100), [Inf, 1.0, -Inf, 2.0], rand(qrng, 1:10, 500),
-                  fill(Int32(7), 3), [-0.0, 0.0, 1.5],
-                  [typemax(Int32), typemin(Int32), Int32(0)],
-                  [1.0f0, 1.0f0 + eps(1.0f0), 1.0f0 - eps(1.0f0)],
-                  reshape(collect(Float32, 1.0:12.0), 3, 4))
-            for ps in ([0.1, 0.5], [0.0, 0.5, 1.0])
-                @test qsel(x, ps) == quantile(vec(x), ps)
-            end
-        end
-        # Scalar and tuple probability forms
-        x = collect(1.0:100)
-        @test qsel(x, 0.25) == quantile(x, 0.25)
-        @test qsel(x, (0.1, 0.5)) == quantile(x, (0.1, 0.5))
-        # NaN handling matches `quantile`
-        @test_throws ArgumentError qsel([1.0, NaN, 3.0], [0.5])
-        @test_throws ArgumentError quantile([1.0, NaN, 3.0], [0.5])
-        # Large-array spot check (Float32 keys resolve in few passes)
-        x = randexp(qrng, Float32, 2_000_000)
-        @test qsel(x, [0.1, 0.5]) == quantile(vec(x), [0.1, 0.5])
+    @testset "noise re-exports" begin
+        # The quantile and noise machinery lives in FastQuantiles.jl and
+        # NoiseEstimators.jl and is re-exported here; check the re-exports
+        # resolve to the providing packages (e.g. that FDRT does not
+        # accidentally shadow them).
+        @test parentmodule(fast_quantile) === FastQuantiles
+        @test parentmodule(noisefloor) === NoiseEstimators
+        @test parentmodule(noisestats) === NoiseEstimators
+        @test parentmodule(noisenormalize) === NoiseEstimators
+        @test parentmodule(noisenormalize!) === NoiseEstimators
+        @test parentmodule(noisedenormalize) === NoiseEstimators
     end
 
     @testset "findhits" begin
@@ -482,128 +382,68 @@ include("taylorreference.jl")
         @test_throws ArgumentError findhits(fdr, 5.0, (0, 1); dist = 0)
     end
 
-    @testset "noisestats" begin
+    @testset "FDR statistics" begin
         # taylorfdr drift blocks with out-of-band drift produce all-zero
-        # columns; noisestats must ignore them (noisenormalize! used to
-        # divide by zero, producing NaNs)
+        # columns; fdrstats must ignore them (fdrnormalize! used to divide
+        # by zero, producing NaNs)
         spec = Float32[mod(1013*i*i + 7*i*j + 61*j*j, 1001) for i in 1:37, j in 1:64]
         fdr = taylorfdr(spec, 0)   # top 27 columns are all zero
         fdr1 = taylorfdr(spec, 1)  # every column is all zero
-        m, s = noisestats(fdr; robust = false)
+        m, s = fdrstats(fdr)
         @test 0 < s < Inf
-        @test noisestats(fdr; robust = false).std == s  # named access
-        @test noisestats([fdr, fdr1]; robust = false) == (mean = m, std = s)
-        @test all(isfinite, noisenormalize!(fdr))
+        @test fdrstats(fdr).std == s  # named access
+        @test fdrstats([fdr, fdr1]) == (mean = m, std = s)
+        @test all(isfinite, fdrnormalize!(fdr))
 
-        @test noisestats(fdr1; robust = false) == (mean = 0.0f0, std = Inf)
-        @test noisenormalize!(fdr1) == zeros(37, 64)
-        @test noisedenormalize(5.0, fdr1) == Inf
+        @test fdrstats(fdr1) == (mean = 0.0f0, std = Inf)
+        @test fdrnormalize!(fdr1) == zeros(37, 64)
+        @test fdrdenormalize(5.0, fdr1) == Inf
         @test isempty(findprotohits(fdr1, 5.0; snr=true))
 
         # Iterable-of-matrices variants
-        @test noisestats([fdr1]; robust = false) == (mean = 0.0f0, std = Inf)
+        @test fdrstats([fdr1]) == (mean = 0.0f0, std = Inf)
         fdrs = [copy(fdr1), copy(fdr)]
-        noisenormalize!(fdrs)
+        fdrnormalize!(fdrs)
         @test all(isfinite, fdrs[1]) && all(isfinite, fdrs[2])
-        @test noisedenormalize(5.0, [copy(fdr1)]) == Inf
+        @test fdrdenormalize(5.0, [copy(fdr1)]) == Inf
         @test isempty(findprotohits([copy(fdr1)], 5.0; snr=true))
 
         # The mean comes from the first column with data, even when earlier
         # columns/matrices are all zero
         hand = zeros(Float32, 4, 8)
         hand[:, 3] .= 1.0f0:4.0f0
-        m2, s2 = noisestats(hand; robust = false)
+        m2, s2 = fdrstats(hand)
         @test m2 == 2.5f0
         @test s2 ≈ std(1.0f0:4.0f0)
-        @test noisestats([copy(fdr1), taylorfdr(spec, 0)]; robust = false) ==
-              (mean = m, std = s)
-        @test noisestats(fill(3.0f0, 4, 8); robust = false) ==
-              (mean = 3.0f0, std = Inf)
+        @test fdrstats([copy(fdr1), taylorfdr(spec, 0)]) == (mean = m, std = s)
+        @test fdrstats(fill(3.0f0, 4, 8)) == (mean = 3.0f0, std = Inf)
 
-        # Robust estimation (delegates to noisefloor): signal contamination
-        # leaves (mean, std) stable while the plain statistics are badly
-        # biased.  The data is Gamma(2, 1) per sample (two unit-mean
-        # exponential polarizations with k = 2).
+        # Robust estimation (delegates to noisestats): excess power
+        # contamination leaves (mean, std) stable while the plain
+        # statistics are badly biased.  The data is Gamma(2, 1) per sample
+        # (two unit-mean exponential polarizations with k = 2).
         rngf = MersenneTwister(7)
         gm = randexp(rngf, Float32, 256, 256) .+ randexp(rngf, Float32, 256, 256)
         gc = copy(gm)
         gc[1:1000] .= 1000f0
-        mr, sr = noisestats(gc; robust = true, k = 2)
+        mr, sr = fdrstats(gc; robust = true, k = 2)
         @test mr ≈ 2 rtol = 0.05
         @test sr ≈ sqrt(2) rtol = 0.15
-        @test noisestats(gc; robust = true, k = 2, qlo = 0.2).mean ≈ 2 rtol = 0.05
-        @test noisestats(gc; robust = false).mean > 5
-        @test noisestats(fill(3.0f0, 4, 8); robust = true) == (mean = 3.0, std = Inf)
-        @test noisestats(zeros(Float32, 4, 4); robust = true) == (mean = 0.0, std = Inf)
-        @test noisestats([gc, gc]; robust = true, k = 2) ==
-              noisestats(gc; robust = true, k = 2)
-        # robust is the default for noisestats (the deprecated fdrstats
-        # keeps the old robust = false default); contamination inflates the
-        # plain mean but leaves the robust mean accurate
-        @test noisestats(gc).mean ≈ 2 rtol = 0.05
-        @test noisestats(gc; robust = false).mean > 5
-    end
-
-    @testset "noisestats per-channel" begin
-        rngb = MersenneTwister(7)
-        # Two 8-channel bands of Gamma(1, 1) noise (exponential power, the
-        # domain of the robust estimator): band 1 has mean 1, band 2 mean 4
-        fdrb = zeros(16, 64)
-        fdrb[1:8, :] .= randexp(rngb, 8, 64)
-        fdrb[9:16, :] .= 4.0 .* randexp(rngb, 8, 64)
-
-        # Banded statistics repeat each band's estimate over its channels.
-        # The non-robust estimator is inherently coarse here: its mean comes
-        # from a single column of `chans_per_band` samples and its sigma is
-        # the minimum over such columns (biased low for short columns), so
-        # only loose bounds are asserted; the robust path below is the
-        # accurate one.
-        st = noisestats(fdrb; chans_per_band = 8, robust = false)
-        @test length(st.mean) == 16 && length(st.std) == 16
-        @test abs(st.mean[1] - 1) < 1.0 && abs(st.mean[9] - 4) < 2.0
-        @test st.mean[1:8] == fill(st.mean[1], 8)
-        @test st.mean[9:16] == fill(st.mean[9], 8)
-        @test st.std[1:8] == fill(st.std[1], 8)
-        @test 0.1 < st.std[1] < 0.9     # min-of-8-sample-columns bias
-        @test 0.4 < st.std[9] < 3.6
-
-        # Robust banded statistics recover the band noise floors
-        str = noisestats(fdrb; chans_per_band = 8)
-        @test str.mean[1] ≈ 1 rtol = 0.1
-        @test str.mean[9] ≈ 4 rtol = 0.1
-        @test str.std[1] ≈ 1 rtol = 0.25
-        @test str.std[9] ≈ 4 rtol = 0.25
-
-        # Per-channel estimation (chans_per_band = 1)
-        st1 = noisestats(fdrb; chans_per_band = 1)
-        @test length(st1.mean) == 16
-        @test st1.mean[3] ≈ 1 rtol = 0.4
-        @test st1.mean[12] ≈ 4 rtol = 0.4
-
-        # Degenerate band (all-zero rows): Inf sigma, like the scalar path
-        fdrz = zeros(8, 16)
-        fdrz[5:8, :] .= 3.0 .+ randn(rngb, 4, 16)
-        stz = noisestats(fdrz; chans_per_band = 4, robust = false)
-        @test stz.mean[1:4] == [0.0, 0.0, 0.0, 0.0]
-        @test stz.std[1:4] == [Inf, Inf, Inf, Inf]
-        @test isfinite(stz.std[5]) && abs(stz.mean[5] - 3) < 1.0
-
-        # Errors: non-positive, non-divisor, and iterables
-        @test_throws ArgumentError noisestats(fdrb; chans_per_band = 0)
-        @test_throws ArgumentError noisestats(fdrb; chans_per_band = 6)
-        @test_throws ArgumentError noisestats(fdrb; chans_per_band = 32)
-        @test_throws ArgumentError noisestats([fdrb]; chans_per_band = 4)
+        @test fdrstats(gc; robust = true, k = 2, qlo = 0.2).mean ≈ 2 rtol = 0.05
+        @test fdrstats(gc).mean > 5
+        @test fdrstats(fill(3.0f0, 4, 8); robust = true) == (mean = 3.0, std = Inf)
+        @test fdrstats(zeros(Float32, 4, 4); robust = true) == (mean = 0.0, std = Inf)
+        @test fdrstats([gc, gc]; robust = true, k = 2) ==
+              fdrstats(gc; robust = true, k = 2)
+        # robust mode is identical to noisestats' robust mode
+        @test fdrstats(fdr; robust = true, k = 2) ==
+              noisestats(fdr; robust = true, k = 2)
     end
 
     @testset "deprecated fdr* names" begin
         spec = Float32[mod(1013*i*i + 7*i*j + 61*j*j, 1001) for i in 1:37, j in 1:64]
         fdr = taylorfdr(spec, 0)
         fdr1 = taylorfdr(spec, 1)
-        # The shims preserve the pre-rename robust = false default
-        @test (@test_deprecated fdrstats(fdr)) == noisestats(fdr; robust = false)
-        @test (@test_deprecated fdrstats(fdr; robust = true, k = 2)) ==
-              noisestats(fdr; robust = true, k = 2)
-        @test (@test_deprecated fdrstats([fdr1])) == (mean = 0.0f0, std = Inf)
         @test (@test_deprecated fdrnormalize(2.0, 1.0, 2.0)) == 0.5
         @test (@test_deprecated fdrnormalize!(copy(fdr1))) == zeros(37, 64)
         @test (@test_deprecated fdrdenormalize(5.0, fdr1)) == Inf
@@ -836,104 +676,6 @@ include("taylorreference.jl")
                 result = taylortree!(gws.buffer1, gws.buffer2, gc, 0)
                 @test result === gws.buffer1 || result === gws.buffer2
                 @test Array(result) == taylorfdr(spec, 0)
-            end
-
-            @testset "noisestats [CUDA]" begin
-                gz = CuArray(zeros(Float32, 4, 4))
-                @test noisestats(gz; robust = false) == (mean = 0.0f0, std = Inf)
-                m, s = noisestats(CuArray(d2); robust = false)
-                @test 0 < s < Inf
-                # Per-channel stats through the GPU banded estimator
-                gzb = noisestats(CuArray(zeros(Float32, 8, 4));
-                                 chans_per_band = 4, robust = false)
-                @test gzb.mean == fill(0.0f0, 8) && gzb.std == fill(Inf, 8)
-
-                # Banded non-robust statistics via the one-pass kernel:
-                # matches the host path (which uses Statistics.std's
-                # two-pass algorithm) to floating-point rounding
-                rngk = MersenneTwister(21)
-                gk = randexp(rngk, Float32, 64, 128)
-                sg = noisestats(gk; chans_per_band = 8, robust = false)
-                sh = noisestats(Array(gk); chans_per_band = 8, robust = false)
-                @test sg.mean ≈ sh.mean rtol = 1e-4
-                @test sg.std ≈ sh.std rtol = 1e-4
-                # degenerate (all-zero) bands yield Inf sigma, like the host
-                sz = noisestats(CuArray(zeros(Float32, 16, 8));
-                                chans_per_band = 8, robust = false)
-                @test sz.mean == fill(0.0f0, 16) && sz.std == fill(Inf, 16)
-            end
-
-            @testset "noisefloor [CUDA]" begin
-                rngg = MersenneTwister(11)
-                gm2 = randexp(rngg, Float32, 256, 256) .+
-                      randexp(rngg, Float32, 256, 256)
-                gd = CuArray(gm2)
-                @test noisefloor(gd; k = 2).mean ≈ noisefloor(gm2; k = 2).mean
-                @test noisefloor(gd; k = 2).std ≈ noisefloor(gm2; k = 2).std
-                @test noisefloor(gd; k = 2).polratio ≈
-                      noisefloor(gm2; k = 2).polratio
-                @test noisestats(gd; robust = true, k = 2) ==
-                      noisestats(gm2; robust = true, k = 2)
-                @test noisestats(CuArray(zeros(Float32, 4, 4)); robust = true) ==
-                      (mean = 0.0, std = Inf)
-            end
-
-            @testset "banded noisefloor [CUDA]" begin
-                rngb = MersenneTwister(31)
-                gb = randexp(rngb, Float32, 64, 128)
-                gbd = CuArray(gb)
-                # The batched device estimation matches the per-band host
-                # fallback: the quantile selection is bit-exact (integer
-                # histograms, host interpolation), so sigma matches exactly
-                # and the unrefined mean too; only the clipped-mean
-                # refinement sums differ, in reduction order.
-                sgb = noisestats(gbd; chans_per_band = 8)
-                shb = noisestats(gb; chans_per_band = 8)
-                @test sgb.mean ≈ shb.mean rtol = 1e-12
-                @test sgb.std == shb.std
-                sgn = noisestats(gbd; chans_per_band = 8, refine = false)
-                shn = noisestats(gb; chans_per_band = 8, refine = false)
-                @test sgn.mean == shn.mean && sgn.std == shn.std
-                # Bitwise reproducible across calls (deterministic partials)
-                @test noisestats(gbd; chans_per_band = 8) == sgb
-                # Keyword pass-through, with noisefloor's validation
-                @test noisestats(gbd; chans_per_band = 8, qlo = 0.2).std ==
-                      noisestats(gb; chans_per_band = 8, qlo = 0.2).std
-                @test noisestats(gbd; chans_per_band = 8, k = 2) == sgb
-                @test_throws ArgumentError noisestats(gbd;
-                                                      chans_per_band = 8,
-                                                      qlo = 0.7)
-                # Mixed degenerate (all-zero) band: band mean of zeros and
-                # Inf sigma, like the host; other bands unaffected
-                gz = CuArray(vcat(zeros(Float32, 16, 128), gb))
-                sgz = noisestats(gz; chans_per_band = 16)
-                hgz = noisestats(Array(gz); chans_per_band = 16)
-                @test sgz.mean[1:16] == hgz.mean[1:16] == zeros(16)
-                @test sgz.std[1:16] == hgz.std[1:16] == fill(Inf, 16)
-                @test sgz.mean[17:80] ≈ hgz.mean[17:80] rtol = 1e-12
-                @test sgz.std[17:80] == hgz.std[17:80]
-                # Single-channel bands
-                s1 = noisestats(gbd; chans_per_band = 1)
-                h1 = noisestats(gb; chans_per_band = 1)
-                @test s1.std == h1.std
-                @test s1.mean ≈ h1.mean rtol = 1e-12
-                # NaNs are rejected on the first pass, like fast_quantile
-                gn = CuArray([1.0f0 NaN32; 3.0f0 4.0f0])
-                @test_throws ArgumentError noisestats(gn; chans_per_band = 1)
-            end
-
-            @testset "fast_quantile [CUDA]" begin
-                rngg = MersenneTwister(11)
-                gm2 = randexp(rngg, Float32, 256, 256) .+
-                      randexp(rngg, Float32, 256, 256)
-                # On-device selection matches `quantile` exactly
-                @test fast_quantile(CuArray(gm2), [0.1, 0.5]) ==
-                      quantile(vec(gm2), [0.1, 0.5])
-                gi = Int32.(round.(gm2 .* 100))
-                @test fast_quantile(CuArray(gi), [0.25, 0.75]) ==
-                      quantile(vec(gi), [0.25, 0.75])
-                @test_throws ArgumentError fast_quantile(
-                    CuArray([1.0f0, NaN32, 3.0f0]), [0.5])
             end
 
             @testset "findhits [CUDA]" begin
