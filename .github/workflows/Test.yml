@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.8"
+          - "1.10"
           - "1"
     steps:
       - uses: actions/checkout@v4
@@ -28,6 +28,13 @@ jobs:
 
       - name: Cache Julia artifacts
         uses: julia-actions/cache@v1
+
+      # General must be added explicitly because Pkg only auto-installs it
+      # into a depot with no registries at all.  FastQuantiles.jl and
+      # NoiseEstimators.jl are resolved from the davidm registry; remove
+      # that add if/when they are registered in General.
+      - name: Add registries
+        run: julia --color=yes -e 'using Pkg; Pkg.Registry.add("General"); Pkg.Registry.add(Pkg.RegistrySpec(url = "https://github.com/david-macmahon/MyJuliaRegistry"))'
 
       - name: Build package
         uses: julia-actions/julia-buildpkg@v1
