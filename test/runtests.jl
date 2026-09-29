@@ -179,7 +179,7 @@ include("taylorreference.jl")
     end
 
     @testset "findhits" begin
-        hrng = MersenneTwister(21)
+        hrng = Xoshiro(21)
         # Two peaks bridged by an above-threshold arm with saddle at 6.0
         fdr = zeros(50, 60)
         fdr[10, 10] = 10.0
@@ -302,8 +302,13 @@ include("taylorreference.jl")
 
         # Robust default statistics (noise-like data with a real peak).
         # Exponential tails legitimately give many hits at low sigma
-        # (P(Exp > 4) ~ 1.8%), so use a high threshold for the swarm check
-        hd = randexp(hrng, Float64, 100, 80)
+        # (P(Exp > 4) ~ 1.8%), so use a high threshold for the swarm
+        # check.  The exponential noise is built from the version-stable
+        # Xoshiro uniform stream (MersenneTwister and randexp streams are
+        # not stable across Julia versions) and clipped below the 8-sigma
+        # threshold so that only the planted peak survives it by
+        # construction rather than by the luck of the draw
+        hd = min.(-log1p.(.-rand(hrng, Float64, 100, 80)), 6.0)
         hd[10, 10] = 50.0
         h = findhits(hd, 3.0)
         @test h.index[1] == CartesianIndex(10, 10)
