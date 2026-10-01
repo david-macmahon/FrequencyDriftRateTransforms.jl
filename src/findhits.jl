@@ -3,9 +3,11 @@
 # thresholded region.  Clustering is a decreasing-value union-find sweep
 # (a merge-tree construction) over the proto-hits with Chebyshev-`dist`
 # linking; `min_prominence` optionally applies a persistence filter that
-# keeps secondary peaks rising far enough above the saddle at which they
-# merge into a higher peak (recovering sources bridged by above-threshold
-# arms, and suppressing low-contrast wiggles on such arms).  Each hit also
+# keeps secondary peaks rising far enough above the saddle at which
+# they merge into a higher peak (recovering sources bridged by above-threshold
+# arms, and suppressing low-contrast wiggles on such arms), while
+# `min_relprominence` scales that requirement with the peak's own height
+# above the noise (scale-free across brightness levels).  Each hit also
 # reports footprint info: the proto-hits its peak dominates (count and
 # row/column extrema) and the extent of its contiguous above-threshold run
 # in its own drift-rate column (`hitwidth`).
@@ -14,8 +16,10 @@
 # `min_prominence` are denormalized with the `stats` (m, s) pair, which is
 # also used to normalize the returned columns, so the identities
 # `hits.value .>= threshold` and `hits.prominence .>= min_prominence`
-# reproduce the internal criteria exactly.  Pass `stats = (0, 1)` to work
-# in raw FDR value units instead.
+# reproduce the internal criteria exactly (`min_relprominence` is a
+# dimensionless fraction, reproduced by
+# `hits.prominence ./ hits.value .>= min_relprominence`).  Pass
+# `stats = (0, 1)` to work in raw FDR value units instead.
 
 """
     findhits(fdr::AbstractMatrix, threshold::Real,
@@ -36,7 +40,8 @@ NamedTuple with (columnar) fields:
   The maximum of each connected above-threshold region is always reported,
   with `prominence = Inf` (it never merges into a higher peak).  Secondary
   peaks are reported only when they rise at least `min_prominence` above
-  the saddle at which they merge into a higher peak; their prominence is
+  the saddle at which they merge into a higher peak (and satisfy
+  `min_relprominence`, see the keyword list); their prominence is
   the height of that rise, so `hits.prominence .>= min_prominence`
   reproduces the reported set exactly.
 - `nhits`: number of proto-hits in each hit's *footprint*, i.e. the set of
@@ -60,9 +65,12 @@ statistics recommended for thresholding; see `noisestats` and
 `noisefloor`).  `threshold` is a level and is denormalized as
 `threshold*s + m` (as by `noisedenormalize`), whereas
 `min_prominence` is a difference and is denormalized as `min_prominence*s`
-(the mean cancels in any difference of levels).  The same `(m, s)` pair
-normalizes the returned columns, so `hits.value .>= threshold` and
-`hits.prominence .>= min_prominence` reproduce the internal criteria.
+(the mean cancels in any difference of levels); `min_relprominence` is a
+dimensionless fraction of the hit's own `value` column.  The same `(m, s)`
+pair normalizes the returned columns, so `hits.value .>= threshold`,
+`hits.prominence .>= min_prominence`, and
+`hits.prominence ./ hits.value .>= min_relprominence` reproduce the
+internal criteria.
 
 The `stats` pair may also be given as a pair of *vectors*, both of length
 `size(fdr, 1)` (one entry per frequency channel; e.g. from
@@ -79,7 +87,8 @@ The special pair `stats = (0, 1)` disables normalization entirely:
 `threshold` and `min_prominence` are interpreted as *raw FDR values* (not
 sigma units), and the returned `value` and `prominence` are likewise raw
 FDR values (`value` is identical to `fdr[index]`, `prominence` is
-`peak - saddle`).  This is the escape hatch for workflows that precompute
+`peak - saddle`; `min_relprominence` compares `prominence` to the raw
+peak height).  This is the escape hatch for workflows that precompute
 raw thresholds (e.g. via `noisedenormalize` with robust statistics):
 
 ```julia
@@ -95,6 +104,18 @@ Keyword arguments:
   bridged by an above-threshold arm (e.g. the X-shaped pattern a strong
   drifting signal leaves in an FDR matrix) and suppresses low-contrast
   wiggles along such arms.
+- `min_relprominence`: `nothing` (default) applies no relative filter; a
+  `Real` value `f` additionally requires each secondary peak's persistence
+  to reach a fraction `f` of the peak's own height above the noise mean,
+  `(peak - saddle)/(peak - m) >= f`, i.e. `prominence/value >= f` in the
+  returned columns.  Being scale-free, one fraction separates genuine
+  sub-peaks of a structure from low-contrast wiggles on it uniformly
+  across brightness levels, where a single absolute `min_prominence`
+  cannot (e.g. twin heads of a bright, spatially extended detection vs.
+  the wiggles on a weaker signal's drift-rate arms).  It is meaningful
+  when peaks sit above the noise mean (`threshold > 0`).  When both
+  `min_prominence` and `min_relprominence` are given, a secondary peak
+  must satisfy both; region maxima are always reported.
 - `dist`: linking distance in Chebyshev metric; proto-hits within `dist`
   (in both frequency and drift-rate index) belong to the same region.
   The default of 2 bridges single-pixel gaps.
@@ -110,9 +131,11 @@ index); for an iterable they are in batch order (each batch sorted).
 """
 function findhits(fdr::AbstractMatrix, threshold::Real,
                   stats = noisestats(fdr);
-                  min_prominence = nothing, dist = 2)
+                  min_prominence = nothing, min_relprominence = nothing,
+                  dist = 2)
     m, s = _findhits_stats(stats)
     dist >= 1 || throw(ArgumentError("dist must be at least 1"))
+    minrel = _minrel(min_relprominence)
     nrows = size(fdr, 1)
     if m isa AbstractVector
         length(m) == nrows || throw(ArgumentError(
@@ -133,14 +156,17 @@ function findhits(fdr::AbstractMatrix, threshold::Real,
     vals = [Float64(fdr[hij]) for hij in protohijs]
     minprom = min_prominence === nothing ? nothing :
               m isa AbstractVector ? min_prominence .* s : min_prominence * s
-    _findhits_result(vals, protohijs, nrows, size(fdr, 2), m, s, minprom, dist)
+    _findhits_result(vals, protohijs, nrows, size(fdr, 2), m, s, minprom,
+                     minrel, dist)
 end
 
 function findhits(fdrs, threshold::Real,
                   stats = noisestats(fdrs);
-                  min_prominence = nothing, dist = 2)
+                  min_prominence = nothing, min_relprominence = nothing,
+                  dist = 2)
     m, s = _findhits_stats(stats)
     dist >= 1 || throw(ArgumentError("dist must be at least 1"))
+    _minrel(min_relprominence)
     Nrb = size(first(fdrs), 2)
     offset = CartesianIndex(0, Nrb)
     index = CartesianIndex{2}[]
@@ -153,7 +179,8 @@ function findhits(fdrs, threshold::Real,
     hirateidx = Int[]
     hitwidth = Int[]
     for (i, fdr) in enumerate(fdrs)
-        hits = findhits(fdr, threshold, (m, s); min_prominence, dist)
+        hits = findhits(fdr, threshold, (m, s); min_prominence,
+                        min_relprominence, dist)
         joff = (i - 1) * Nrb
         append!(index, hits.index .+ ((i - 1) * offset))
         append!(value, hits.value)
@@ -190,6 +217,15 @@ function _findhits_stats(stats)
     return Float64(m), Float64(s)
 end
 
+# Validate and normalize the relative prominence filter: `nothing` or a
+# non-negative fraction of the peak's own height above the noise mean.
+function _minrel(min_relprominence)
+    min_relprominence === nothing && return nothing
+    min_relprominence >= 0 || throw(ArgumentError(
+        "min_relprominence must be non-negative (got $min_relprominence)"))
+    return Float64(min_relprominence)
+end
+
 # The empty findhits result (also used by the CUDA method's no-proto-hits
 # early return).
 _findhits_empty() = (index = CartesianIndex{2}[], value = Float64[],
@@ -203,7 +239,7 @@ _findhits_empty() = (index = CartesianIndex{2}[], value = Float64[],
 # raw threshold, or a per-channel raw-threshold vector.
 function _findhits_result(vals::Vector{Float64}, protohijs::Vector{CartesianIndex{2}},
                           nrows::Int, ncols::Int, m, s,
-                          min_prom_raw, dist::Int)
+                          min_prom_raw, minrel, dist::Int)
     isempty(protohijs) && return _findhits_empty()
     lijs = [hij[1] + (hij[2] - 1) * nrows for hij in protohijs]
     # Per-proto-hit (raw) min_prominence thresholds when `s` is a vector:
@@ -213,7 +249,7 @@ function _findhits_result(vals::Vector{Float64}, protohijs::Vector{CartesianInde
                   Float64[min_prom_raw[(lij - 1) % nrows + 1] for lij in lijs] :
                   min_prom_raw
     idxs, proms_raw, nhits, lois, hais, lojs, hajs, hws =
-        _findhits_sweep(vals, lijs, nrows, ncols, dist, minprom_ord)
+        _findhits_sweep(vals, lijs, nrows, ncols, dist, minprom_ord, minrel, m)
     index = protohijs[idxs]
     rows = [(lijs[idx] - 1) % nrows + 1 for idx in idxs]
     value = [(vals[idx] - _statat(m, row)) / _statat(s, row)
@@ -238,7 +274,8 @@ _statat(x, row) = x isa AbstractVector ? x[row] : x
 # roots), plus the hit's drift-axis run extent (see `_run_extent`).
 function _findhits_sweep(vals::Vector{Float64}, lijs::Vector{Int}, nrows::Int,
                          ncols::Int, dist::Int,
-                         min_prom::Union{Nothing, Float64, Vector{Float64}})
+                         min_prom::Union{Nothing, Float64, Vector{Float64}},
+                         minrel::Union{Nothing, Float64}, m)
     n = length(vals)
     order = sortperm(1:n, by = i -> (-vals[i], lijs[i]))
     parent = collect(1:n)
@@ -303,12 +340,21 @@ function _findhits_sweep(vals::Vector{Float64}, lijs::Vector{Int}, nrows::Int,
                 lo, hi = ra, rb
             end
             persist = peakval[lo] - v
-            if min_prom !== nothing && persist > 0
+            if (min_prom !== nothing || minrel !== nothing) && persist > 0
                 # With per-channel stats, each peak is filtered against the
-                # min_prominence of its own channel (see `_findhits_result`)
+                # statistics of its own channel (see `_findhits_result`):
+                # `min_prom` is an absolute raw persistence, while `minrel`
+                # is a fraction of the peak's own raw height above the
+                # noise mean, so `persist >= minrel*(peak - m)` reproduces
+                # the `prominence/value >= minrel` criterion of the
+                # returned (sigma-domain) columns exactly.
+                prow = (lijs[peakord[lo]] - 1) % nrows + 1
+                peakheight = minrel === nothing ? 0.0 :
+                             peakval[lo] - _statat(m, prow)
                 promthr = min_prom isa AbstractVector ?
                           min_prom[peakord[lo]] : min_prom
-                if persist >= promthr
+                if (min_prom === nothing || persist >= promthr) &&
+                   (minrel === nothing || persist >= minrel * peakheight)
                     push!(retired_site, peakord[lo])
                     push!(retired_prom, persist)
                     push!(retired_nhits, size[lo])

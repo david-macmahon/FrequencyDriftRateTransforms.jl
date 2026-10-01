@@ -4,14 +4,14 @@
 # host (see `src/findhits.jl`).
 
 import FrequencyDriftRateTransforms: findhits, _findhits_stats, _findhits_result,
-                                     _findhits_empty, noisestats
+                                     _findhits_empty, _minrel, noisestats
 
 const _findhits_tile = 32
 
 """
     findhits(fdr::CuMatrix, threshold::Real,
              stats = noisestats(fdr);
-             min_prominence = nothing, dist = 2)
+             min_prominence = nothing, min_relprominence = nothing, dist = 2)
 
 CUDA method of [`findhits`](@ref): a kernel computes the maximum of each
 32x32 tile of `fdr` on the device along with the minimum per-channel
@@ -24,9 +24,11 @@ the CPU method.
 """
 function findhits(fdr::CuMatrix, threshold::Real,
                   stats = noisestats(fdr);
-                  min_prominence = nothing, dist = 2)
+                  min_prominence = nothing, min_relprominence = nothing,
+                  dist = 2)
     m, s = _findhits_stats(stats)
     dist >= 1 || throw(ArgumentError("dist must be at least 1"))
+    minrel = _minrel(min_relprominence)
     Nf, Nr = size(fdr)
     if m isa AbstractVector
         length(m) == Nf || throw(ArgumentError(
@@ -69,7 +71,7 @@ function findhits(fdr::CuMatrix, threshold::Real,
             push!(vals, Float64(v))
         end
     end
-    return _findhits_result(vals, protohijs, Nf, Nr, m, s, minprom, dist)
+    return _findhits_result(vals, protohijs, Nf, Nr, m, s, minprom, minrel, dist)
 end
 
 # Maximum of each 32x32 tile of `fdr` plus the minimum per-channel threshold

@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `findhits` now accepts a `min_relprominence` keyword, a relative
+  companion to `min_prominence`: a secondary peak is reported only when
+  its persistence reaches a fraction `min_relprominence` of its own peak
+  height above the noise mean (`prominence/value >= min_relprominence`,
+  both columns in sigma units of the hit's own channel statistics).
+  Unlike the absolute `min_prominence`, this criterion is scale-free
+  across brightness levels.  When both keywords are given, a secondary
+  peak must satisfy both; region maxima are always reported.
+
 ## [v0.10.0] - 2026-09-29
 
 ### Added

@@ -368,6 +368,89 @@ include("taylorreference.jl")
         @test h.prominence == [Inf, Inf, 2.0]
         @test h.nhits == [10, 10, 1]
 
+        # min_relprominence: relative persistence filter, scale-free in the
+        # peak's brightness.  Fixture: bright region (peak 100) whose arm
+        # carries a high-persistence but low-contrast wiggle (95 atop an
+        # 85 saddle), plus a twin head (20 bridged at a 10 saddle); both
+        # secondaries have absolute persistence 10 but very different
+        # persistence fractions (10/95 vs 10/20)
+        fdrr = zeros(12, 3)
+        fdrr[2, 2] = 20.0    # twin head B
+        fdrr[3, 2] = 10.0    # B's saddle
+        fdrr[4, 2] = 10.0
+        fdrr[5, 2] = 100.0   # region max A
+        fdrr[6, 2] = 85.0    # arm
+        fdrr[7, 2] = 85.0    # the wiggle's saddle
+        fdrr[9, 2] = 95.0    # arm wiggle W
+        fdrr[10, 2] = 85.0
+        # An absolute filter cannot tell the two apart (both persist 10)
+        h = findhits(fdrr, 5.0, (0, 1); min_prominence = 9.0)
+        @test h.index == [CartesianIndex(5, 2), CartesianIndex(9, 2),
+                          CartesianIndex(2, 2)]
+        @test h.value == [100.0, 95.0, 20.0]
+        @test h.prominence == [Inf, 10.0, 10.0]
+        # The relative filter keeps the twin head (10/20 = 0.5) and drops
+        # the wiggle (10/95 ~ 0.105)
+        h = findhits(fdrr, 5.0, (0, 1); min_relprominence = 0.3)
+        @test h.index == [CartesianIndex(5, 2), CartesianIndex(2, 2)]
+        @test h.value == [100.0, 20.0]
+        @test h.prominence == [Inf, 10.0]
+        @test h.nhits == [8, 2]     # B's footprint is {(2, 2), (3, 2)}
+        # Both keywords must both pass (AND); region maxima always report
+        h = findhits(fdrr, 5.0, (0, 1); min_prominence = 10.0,
+                     min_relprominence = 0.3)
+        @test h.index == [CartesianIndex(5, 2), CartesianIndex(2, 2)]
+        h = findhits(fdrr, 5.0, (0, 1); min_prominence = 15.0,
+                     min_relprominence = 0.3)
+        @test h.index == [CartesianIndex(5, 2)]
+        # The identity prominence/value >= min_relprominence reproduces the
+        # reported set exactly
+        hall = findhits(fdrr, 5.0, (0, 1); min_prominence = 0.0)
+        @test hall.index[hall.prominence ./ hall.value .>= 0.3] ==
+              findhits(fdrr, 5.0, (0, 1); min_relprominence = 0.3).index
+        # Defaults are unchanged (cluster-peak semantics)
+        @test findhits(fdrr, 5.0, (0, 1)).index == [CartesianIndex(5, 2)]
+
+        # min_relprominence with per-channel stats: persistence is compared
+        # to the peak's own sigma height ((peak - m)/s), not the raw ratio
+        fdrv = zeros(20, 4)
+        fdrv[11:20, 2] .= 100.0            # band-2 floor (m = 100, s = 10)
+        fdrv[12, 2] = 500.0                # band-2 root (40 sigma)
+        fdrv[14, 2] = 150.0                # 5-sigma bridge
+        fdrv[16, 2] = 400.0                # band-2 head (30 sigma)
+        fdrv[18, 2] = 150.0
+        fdrv[2, 2] = 30.0                  # band-1 root (30 sigma, m = 0, s = 1)
+        fdrv[4, 2] = 5.0
+        fdrv[6, 2] = 20.0                  # band-1 head (20 sigma)
+        fdrv[8, 2] = 5.0
+        mvv = [fill(0.0, 10); fill(100.0, 10)]
+        svv = [fill(1.0, 10); fill(10.0, 10)]
+        h = findhits(fdrv, 5.0, (mvv, svv))
+        @test h.index == [CartesianIndex(12, 2), CartesianIndex(2, 2)]
+        @test h.value == [40.0, 30.0]
+        # f = 0.7 keeps both heads: band-2's sigma ratio is 25/30 ~ 0.83
+        # even though its raw ratio is only 250/400 = 0.625
+        h = findhits(fdrv, 5.0, (mvv, svv); min_relprominence = 0.7)
+        @test h.index == [CartesianIndex(12, 2), CartesianIndex(2, 2),
+                          CartesianIndex(16, 2), CartesianIndex(6, 2)]
+        @test h.value == [40.0, 30.0, 30.0, 20.0]
+        @test h.prominence == [Inf, Inf, 25.0, 15.0]
+
+        # Iterable method: min_relprominence applies to every block
+        g1 = zeros(10, 4)
+        g1[2, 2] = 20.0; g1[3, 2] = 10.0; g1[4, 2] = 10.0
+        g1[5, 2] = 100.0; g1[6, 2] = 85.0; g1[7, 2] = 85.0
+        g1[9, 2] = 95.0; g1[10, 2] = 85.0
+        g2 = zeros(10, 4)
+        g2[3, 3] = 12.0; g2[4, 3] = 6.0    # low head with a 6 saddle
+        g2[6, 3] = 10.0; g2[7, 3] = 6.0
+        h = findhits([g1, g2], 5.0, (0, 1); min_relprominence = 0.3)
+        @test h.index == [CartesianIndex(5, 2), CartesianIndex(2, 2),
+                          CartesianIndex(3, 7), CartesianIndex(6, 7)]
+        @test h.value == [100.0, 20.0, 12.0, 10.0]
+        @test h.prominence == [Inf, 10.0, Inf, 4.0]
+        @test h.lorateidx == [2, 2, 7, 7]  # column-offset for block 2
+
         # Batched method passes per-channel stats through to every block
         f1 = zeros(10, 5)
         f1[3, 2] = 9.0                 # 9 sigma in band 1
@@ -382,9 +465,11 @@ include("taylorreference.jl")
         @test h.value == [9.0, 8.0, 5.5]
         @test h.lorateidx == [2, 8, 9] && h.hirateidx == [2, 8, 9]
 
-        # Invalid stats/dist
+        # Invalid stats/dist/relative prominence
         @test_throws ArgumentError findhits(fdr, 5.0, (0, 0))
         @test_throws ArgumentError findhits(fdr, 5.0, (0, 1); dist = 0)
+        @test_throws ArgumentError findhits(fdr, 5.0, (0, 1);
+                                            min_relprominence = -0.5)
     end
 
     @testset "FDR statistics" begin
@@ -782,6 +867,20 @@ include("taylorreference.jl")
                 @test hgc.prominence == hfc.prominence == [Inf, Inf, Inf]
                 @test hgc.nhits == hfc.nhits == [1, 1, 1]
                 @test hgc.hitwidth == hfc.hitwidth == [1, 1, 1]
+
+                # min_relprominence parity (same fixture as the CPU testset)
+                fdrr = zeros(12, 3)
+                fdrr[2, 2] = 20.0; fdrr[3, 2] = 10.0; fdrr[4, 2] = 10.0
+                fdrr[5, 2] = 100.0; fdrr[6, 2] = 85.0; fdrr[7, 2] = 85.0
+                fdrr[9, 2] = 95.0; fdrr[10, 2] = 85.0
+                hrf = findhits(fdrr, 5.0, (0, 1); min_relprominence = 0.3)
+                hrg = findhits(CuArray(Float32.(fdrr)), 5.0f0, (0, 1);
+                               min_relprominence = 0.3)
+                @test hrg.index == hrf.index ==
+                      [CartesianIndex(5, 2), CartesianIndex(2, 2)]
+                @test hrg.value == hrf.value == [100.0, 20.0]
+                @test hrg.prominence == hrf.prominence == [Inf, 10.0]
+                @test hrg.nhits == hrf.nhits == [8, 2]
 
                 # No proto-hits
                 h = findhits(CuArray(zeros(Float32, 64, 64)), 5.0f0, (0, 1))
