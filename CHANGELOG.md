@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Unlike the absolute `min_prominence`, this criterion is scale-free
   across brightness levels.  When both keywords are given, a secondary
   peak must satisfy both; region maxima are always reported.
+- The ZDT postphase window accepts a `:binom5` preset: the 5-point
+  binomial smoothing kernel `[1, 4, 6, 4, 1]/16`.
+- Documentation of Gibbs ringing from the ZDT's band-limited
+  fractional-drift interpolation and of the apodization remedy, in the
+  extended help of `zdtfdr` (along with the window-function interface
+  and kernel recipes).
 
 ## [v0.10.0] - 2026-09-29
 

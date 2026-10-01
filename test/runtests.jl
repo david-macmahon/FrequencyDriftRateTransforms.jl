@@ -664,8 +664,50 @@ include("taylorreference.jl")
         dest = create_fdr(d2, 5)
         @test zdtfdr!(:hamming, dest, zdtws) === dest
         @test dest ≈ ham
+        # Binomial window is a circular 5-point convolution with kernel
+        # [1, 4, 6, 4, 1]/16 along frequency
+        binom5 = zdtfdr(:binom5, zdtws)
+        conv5 = zero(rect)
+        for (i, w) in enumerate([1, 4, 6, 4, 1] ./ 16)
+            conv5 .+= w .* circshift(rect, (i - 3, 0))
+        end
+        @test binom5 ≈ conv5
+        # The :binom5 symbol matches the equivalent function window
+        @test zdtfdr((n, N) -> (6 + 8cospi(2n / N) + 2cospi(4n / N)) / 16,
+                     zdtws) == binom5
         # Unsupported window type
         @test_throws ErrorException zdtfdr(:nope, zdtws)
+    end
+
+    @testset "ZDT Gibbs ringing" begin
+        # A bright, single-channel line in an otherwise empty spectrogram
+        # rings under the ZDT's band-limited (periodic-sinc) fractional
+        # drift interpolation; the postphase smoothing window bounds that
+        # ringing (it is equivalent to apodizing the input spectrogram).
+        Nfg, Ntg = 1024, 16
+        spec = zeros(Float64, Nfg, Ntg)
+        c0 = 501
+        spec[c0, :] .= 1000.0
+        zws = ZDTWorkspace(spec, range(0, 1//2, length = 2))
+        rect = zdtfdr(zws)          # column 2 drifts half a channel/step
+        binom5 = zdtfdr(:binom5, zws)
+        j = 2
+        # The line's FDR signature smears over its drifted path (c0 down to
+        # c0 - 7.5), so the column peak sits just below c0 under both windows
+        @test c0 - 4 <= argmax(rect[:, j]) <= c0
+        @test c0 - 4 <= argmax(binom5[:, j]) <= c0
+        # At zero drift the sum is exact: no fractional shifts, so anything
+        # outside the line is floating-point phase-rounding leakage
+        @test maximum(abs.(rect[1:c0-3, 1])) < 1e-4 * spec[c0, 1]
+        @test maximum(abs.(rect[c0+4:end, 1])) < 1e-4 * spec[c0, 1]
+        # Ringing clear of the drifted line's path (right of c0) is
+        # suppressed by the smoothing window
+        offs = 9:16
+        ring(fdr) = maximum(abs(fdr[c0 + d, j]) for d in offs)
+        rrect = ring(rect)
+        rb5 = ring(binom5)
+        @test rrect > 0.003 * spec[c0, 1]   # the ringing is substantial
+        @test rb5 < 0.05 * rrect            # ... and bounded by apodization
     end
 
     @testset "batchrates" begin
