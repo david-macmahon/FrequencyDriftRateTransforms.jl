@@ -710,6 +710,14 @@ include("taylorreference.jl")
         @test rb5 < 0.05 * rrect            # ... and bounded by apodization
     end
 
+    @testset "fftw threads" begin
+        old = fftw_get_num_threads()
+        fftw_set_num_threads(2)
+        @test fftw_get_num_threads() == 2
+        fftw_set_num_threads(old)
+        @test fftw_get_num_threads() == old
+    end
+
     @testset "batchrates" begin
         # Needs at least 2 time samples (like taylorfdr)
         @test_throws ArgumentError batchrates(1, 0.1, 1.0)

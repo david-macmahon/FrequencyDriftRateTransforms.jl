@@ -43,6 +43,7 @@ export taylorfdr, taylorfdr!
 
 # zdtfdr.jl
 export ZDTWorkspace
+export fftw_set_num_threads, fftw_get_num_threads
 export zdtinput!, zdtoutput!
 export zdtpreprocess!, zdtconvolve!, zdtpostprocess!
 export zdtfdr, zdtfdr!

@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fractional-drift interpolation and of the apodization remedy, in the
   extended help of `zdtfdr` (along with the window-function interface
   and kernel recipes).
+- `fftw_set_num_threads` and `fftw_get_num_threads`: thin exported
+  wrappers around FFTW's process-global thread controls.  Call
+  `fftw_set_num_threads` before constructing a workspace; plans pick up
+  the thread count at planning time.
 
 ## [v0.10.0] - 2026-09-29
 

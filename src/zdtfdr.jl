@@ -8,6 +8,31 @@ using LinearAlgebra
 import FFTW
 
 """
+    fftw_set_num_threads(n = Threads.nthreads()) -> n
+
+Set the number of threads FFTW uses for its CPU transforms to `n` and
+return it.  The FFTW thread count is *process-global* state and only
+affects plans created *after* the call (plans pick up the thread count
+when they are created), so call this before constructing a
+`ZDTWorkspace` or any other workspace that plans FFTs.  The default
+matches the number of Julia threads available (`Threads.nthreads()`).
+
+See also [`fftw_get_num_threads`](@ref).
+"""
+function fftw_set_num_threads(n::Integer = Threads.nthreads())
+    FFTW.set_num_threads(n)
+    return Int(n)
+end
+
+"""
+    fftw_get_num_threads() -> Int
+
+Return the number of threads FFTW uses for its CPU transforms (see
+[`fftw_set_num_threads`](@ref)).
+"""
+fftw_get_num_threads() = FFTW.get_num_threads()
+
+"""
     ZDTWorkspace(spectrogram, rates[, factors=(2, 3, 5)]; output_aligned=false) -> workspace
 
 Create a *workspace* suitable for use with `zdtfdr` and `zdtfdr!`.  The
@@ -130,10 +155,11 @@ Make the ZDT's FFT plans for `spectrogram::AbstractArray` for which a more
 specialized method is not available.
 
 NB: the CPU FFT plans are created without enabling FFTW's multithreading
-because `FFTW.set_num_threads` sets process-global state, which a package
-should not silently change.  To use multiple threads for the CPU FFTs, call
-`FFTW.set_num_threads(Threads.nthreads())` before constructing the workspace;
-plans pick up the thread count at planning time.
+because setting the FFTW thread count is process-global state, which a
+package should not silently change.  To use multiple threads for the CPU
+FFTs, call [`fftw_set_num_threads`](@ref) before constructing the
+workspace; plans pick up the thread count at planning time (see also
+[`fftw_get_num_threads`](@ref)).
 """
 function plan_ffts!(workspace::ZDTWorkspace,
                     spectrogram::AbstractMatrix{<:Real};
