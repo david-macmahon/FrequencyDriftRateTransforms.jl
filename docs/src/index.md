@@ -169,8 +169,9 @@ would be plain statistics, so a single bright signal inflates them and raises
 every threshold.  The `noisefloor` function estimates the noise floor
 power robustly instead: it models the data as the sum of two independent Gamma
 distributed polarizations (the natural distribution of integrated power
-samples) and anchors the estimate on signal-free quantiles (the `qlo`
-quantile, 10% by default, and the median).  The estimated mean stays within a
+samples) and anchors the estimate on signal-free quantiles (the `qlo` and
+`qhi` quantiles, 10% and 50% by default, with an optional clipped-mean
+refinement of the mean via `clip`).  The estimated mean stays within a
 few percent of the true noise floor even at contamination fractions of order
 15% (where it biases high by ~3%), while the plain mean is already badly
 biased at a 1% contamination fraction.  `noisestats` is robust by default
@@ -225,7 +226,7 @@ and re-exported here; their documentation covers the two-Gamma noise
 model, the `k` convention (for filterbank power data
 `k = n_accum = abs(foff) * tsamp`, and `k = n_accum * Nt` for an FDR
 matrix produced from `Nt` path-summed time samples), per-component split
-accuracy, choosing `qlo`, and a worked Breakthrough Listen Voyager 2020
+accuracy, choosing the quantiles, and a worked Breakthrough Listen Voyager 2020
 example.
 
 ## Finding hits

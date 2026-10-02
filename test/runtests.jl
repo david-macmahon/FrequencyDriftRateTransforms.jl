@@ -520,6 +520,9 @@ include("taylorreference.jl")
         @test mr ≈ 2 rtol = 0.05
         @test sr ≈ sqrt(2) rtol = 0.15
         @test fdrstats(gc; robust = true, k = 2, qlo = 0.2).mean ≈ 2 rtol = 0.05
+        @test fdrstats(gc; robust = true, k = 2, qhi = 0.4).mean ≈ 2 rtol = 0.05
+        @test fdrstats(gc; robust = true, k = 2, clip = 4).mean ≈ 2 rtol = 0.05
+        @test_throws ArgumentError fdrstats(gc; robust = true, k = 2, clip = 0.5)
         @test fdrstats(gc).mean > 5
         @test fdrstats(fill(3.0f0, 4, 8); robust = true) == (mean = 3.0, std = Inf)
         @test fdrstats(zeros(Float32, 4, 4); robust = true) == (mean = 0.0, std = Inf)

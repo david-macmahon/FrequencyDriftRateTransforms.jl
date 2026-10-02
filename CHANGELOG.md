@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- `NoiseEstimators` compatibility bumped from 0.3 to 0.4, adopting its
+  revised noise-floor API: estimates are anchored on the `qlo` and `qhi`
+  quantiles (defaults 0.1 and 0.5, the median; the previous spread
+  estimates are reproduced exactly), the clipped-mean refinement of the
+  mean is now opt-in via `clip` (default `0`; previously on by default
+  via `refine = true`, so default mean estimates shift slightly), and
+  the new `qhi` and `clip` keywords pass through `noisestats` and
+  `fdrstats` with `robust = true`.
+
 ## [v0.11.0] - 2026-10-01
 
 ### Added
